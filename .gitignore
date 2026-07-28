@@ -5,10 +5,7 @@
 services/go-api/bin/
 services/go-api/*.exe
 
-# Python
-services/ai-service/__pycache__/
-services/ai-service/.venv/
-services/ai-service/*.pyc
+
 
 # Node / Angular
 clients/web-angular/node_modules/
