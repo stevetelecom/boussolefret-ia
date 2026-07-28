@@ -10,6 +10,6 @@ RUN npm install --legacy-peer-deps && npm run build -- --configuration productio
 
 FROM nginx:stable-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist/boussolefret-ia-web/. /usr/share/nginx/html/
+COPY --from=builder /app/dist/boussolefret-ia-web/browser/. /usr/share/nginx/html/
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
