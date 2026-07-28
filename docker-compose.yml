@@ -1,6 +1,14 @@
-version: "3.9"
-
 services:
+
+  web:
+    build:
+      context: ./clients/web-angular
+    container_name: bf_web
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - go-api
 
   postgres:
     image: pgvector/pgvector:pg16
