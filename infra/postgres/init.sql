@@ -29,3 +29,8 @@ INSERT INTO documents (name, status) VALUES
     ('LVO_2026.pdf', 'Validé'),
     ('LVI_2026.pdf', 'À vérifier'),
     ('Mission_042.pdf', 'À risque');
+
+-- Activation de l'index de similarité cosinus, maintenant qu'on va réellement
+-- alimenter document_chunks (remplace le commentaire précédent laissé en placeholder).
+CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding
+    ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
