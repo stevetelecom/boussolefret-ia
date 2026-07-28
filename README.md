@@ -6,20 +6,24 @@ Assistant intelligent de conformité et de connaissance réglementaire pour le f
 
 ---
 
-## 1. Choix du backend — Go, Spring Boot ou Python/Django ?
+## 1. Choix du backend — Go, et uniquement Go
 
-Ni Spring Boot ni Django ne sont retenus comme backend principal. Le projet adopte une architecture **polyglotte à deux services**, chacun choisi pour ce qu'il fait le mieux :
+> ⚠️ Correction vs. version précédente : le CDC (§9.1–9.4, ENF-PLT-01 à 05) impose une **stack backend unique en Go**, pas d'architecture polyglotte Go + Python. Ce choix n'est pas une préférence technique mais une exigence non fonctionnelle du cahier des charges.
 
-| Service | Langage / Framework | Pourquoi |
-|---|---|---|
-| **`go-api`** — cœur métier | **Go** (Gin) | Cohérent avec la stack déjà choisie par Flysoft pour FretCorridor (Go, Clean Architecture) ; excellent pour le multi-tenant, le RBAC, l'ingestion événementielle (NATS) et les API à forte concurrence. Rien à gagner à changer de langage ici. |
-| **`ai-service`** — pipeline IA/RAG | **Python** (FastAPI, *pas* Django) | L'écosystème IA (embeddings, LangChain, sentence-transformers, clients LLM) est quasi exclusivement Python. FastAPI est choisi plutôt que Django : async natif (I/O réseau vers le LLM et pgvector), aucun ORM/admin lourd inutile ici, démarrage et image Docker beaucoup plus légers, mieux adapté à un microservice qu'à une application monolithique. |
+Le CDC BoussoleFret IA (FSE-CDC-BOUSSOLEFRET-2026-001, §9.2) définit explicitement tous les services backend en **Go** :
 
-**Pourquoi pas Spring Boot ?** Aucun avantage spécifique pour l'IA (Java n'a pas d'écosystème RAG comparable à Python), une JVM plus lourde à conteneuriser/démarrer, et une divergence inutile avec la stack Go déjà validée par la Direction Technique.
+| Service | Rôle (CDC §9.2) |
+|---|---|
+| **Passerelle / BFF** | Authentification, rate-limit, idempotence, agrégation des appels vers les services métier |
+| **Service RAG** | Recherche par similarité (pgvector), construction du contexte, appel au LLM externe, citation des sources |
+| **Service Ingestion (COR)** | Vectorisation, versionning et indexation du corpus réglementaire |
+| **Service Anomalies (ANO)** | Analyse de similarité documentaire, scoring de risque, file de contrôle |
 
-**Pourquoi pas tout en Django ?** Django est excellent pour un backend CRUD classique avec admin intégré, mais moins adapté ici : moins performant en environnement événementiel/concurrent, ORM synchrone par défaut, et redondant avec `go-api` qui porte déjà la logique métier, le multi-tenant et l'authentification. Le limiter au rôle de service IA stateless (FastAPI) garde chaque brique simple et remplaçable.
+**Pourquoi pas un microservice Python (FastAPI/LangChain) pour le RAG ?** Le CDC ne prévoit pas cette brique : introduire un second langage dupliquerait une partie de la logique métier (ENF-PLT-01 : *« aucune logique métier dupliquée côté client »*, principe étendu ici à l'ensemble de la plateforme) et ajouterait une base de code, un pipeline CI/CD et une surface d'exploitation supplémentaires que le CDC cherche justement à éviter (§9.3 : *réutilisation, pas de troisième base de code*). L'appel au LLM externe et le calcul de similarité pgvector se font depuis Go via une **passerelle Go dédiée** (§9.1, R3).
 
-**Règle de communication entre les deux services** : `go-api` reste le point d'entrée unique pour les clients (web/mobile/desktop) et le RBAC/multi-tenant ; il délègue à `ai-service` (REST interne, `http://ai-service:8000`) uniquement les tâches d'embeddings/génération/recherche vectorielle. Aucun client n'appelle `ai-service` directement.
+**Pourquoi pas Spring Boot ou Django ?** Aucun des deux n'est retenu : ils réintroduiraient exactement le même problème (langage/stack divergent de celui validé pour FretCorridor et repris par ce CDC), sans bénéfice pour la partie RAG (l'écosystème d'embeddings/LLM le plus mûr reste consommable en Go via API HTTP, sans nécessiter un runtime Python dédié).
+
+**Règle de communication** : `go-api` reste le point d'entrée unique pour les clients (web/mobile/desktop) et porte le RBAC/multi-tenant, l'ingestion, le RAG et la détection d'anomalies — soit dans un seul binaire modulaire (Clean Architecture, packages séparés), soit en plusieurs services Go internes communiquant via NATS, mais **jamais via un service dans un autre langage**.
 
 ---
 
@@ -28,36 +32,49 @@ Ni Spring Boot ni Django ne sont retenus comme backend principal. Le projet adop
 ```
                      ┌───────────────────────────────────────────────┐
                      │                  Clients                       │
-                     │  Angular (PWA)   Flutter (mobile)  Flutter     │
-                     │  web bureaux     agents terrain    (desktop)   │
+                     │  Angular (PWA)   Flutter (mobile)   Desktop    │
+                     │  web bureaux     agents terrain   (packaging   │
+                     │                                    natif du    │
+                     │                                    client Web, │
+                     │                                    Tauri/      │
+                     │                                    Electron)   │
                      └───────────────────────┬─────────────────────────┘
-                                              │ HTTPS / REST
+                                              │ HTTPS / REST (API Go unique, versionnée)
                                               ▼
                      ┌───────────────────────────────────────────────┐
-                     │            go-api  (Go, Gin, Clean Arch)       │
-                     │  Auth · RBAC · Multi-tenant · Audit · KNOW/ASK │
+                     │               go-api  (Go, Clean Architecture) │
+                     │  Passerelle/BFF · Auth · RBAC · Multi-tenant   │
+                     │  Service RAG · Service Ingestion (COR)         │
+                     │  Service Anomalies (ANO) · Audit               │
                      └───────┬───────────────┬──────────────┬─────────┘
                               │               │              │
-                       REST interne     pub/sub events   lecture/écriture
-                              │               │              │
+                       appel LLM        pub/sub events   lecture/écriture
+                       (passerelle Go)        │              │
                               ▼               ▼              ▼
                   ┌────────────────┐   ┌────────────┐  ┌──────────────┐
-                  │  ai-service     │   │    NATS     │  │  PostgreSQL   │
-                  │ (Python/FastAPI)│   │ (bus événe- │  │  + pgvector   │
-                  │ embeddings, RAG,│◄──┤ ments :     │  │  (embeddings, │
-                  │ recherche       │   │ ingestion,  │  │   documents,  │
-                  │ sémantique      │   │ ré-indexation)│ │   audit)      │
-                  └───────┬─────────┘   └────────────┘  └──────┬────────┘
-                          │                                     │
-                          ▼                                     ▼
-                  ┌────────────────┐                     ┌──────────────┐
-                  │  Redis (cache)  │                     │  MinIO        │
-                  │  réponses       │                     │  (documents   │
-                  │  fréquentes     │                     │   source)     │
-                  └────────────────┘                     └──────────────┘
+                  │  LLM externe    │   │    NATS     │  │  PostgreSQL   │
+                  │  (API tierce)   │   │ (bus événe- │  │  + pgvector   │
+                  │                 │   │ ments :     │  │  (embeddings, │
+                  │                 │   │ ingestion,  │  │   documents,  │
+                  │                 │   │ ré-indexation)│ │   audit)      │
+                  └─────────────────┘   └────────────┘  └──────┬────────┘
+                                                                 │
+                                                                 ▼
+                                                          ┌──────────────┐
+                                                          │  Redis (cache)│
+                                                          │  réponses     │
+                                                          │  fréquentes   │
+                                                          └──────┬────────┘
+                                                                 │
+                                                                 ▼
+                                                          ┌──────────────┐
+                                                          │  MinIO        │
+                                                          │  (documents   │
+                                                          │   source)     │
+                                                          └──────────────┘
 ```
 
-**Flux d'ingestion d'un document** : `go-api` reçoit le document (upload web/mobile) → stockage brut dans MinIO → événement publié sur NATS (`docs.ingested`) → `ai-service` consomme l'événement, calcule les embeddings, les indexe dans `pgvector` → `go-api` peut ensuite interroger `ai-service` pour une réponse RAG citant les sources.
+**Flux d'ingestion d'un document** : `go-api` reçoit le document (upload web/mobile) → stockage brut dans MinIO → événement publié sur NATS (`docs.ingested`) → le module Ingestion (COR) de `go-api` consomme l'événement, calcule les embeddings, les indexe dans `pgvector` → le module RAG interroge ensuite pgvector + le LLM externe pour produire une réponse citant ses sources, avec **abstention explicite** si la similarité est insuffisante (EF-RAG-03).
 
 ---
 
@@ -65,15 +82,15 @@ Ni Spring Boot ni Django ne sont retenus comme backend principal. Le projet adop
 
 | Brique | Technologie | Rôle |
 |---|---|---|
-| Backend métier | Go 1.22, Gin, Clean Architecture | API, RBAC, multi-tenant, audit |
-| Service IA | Python 3.12, FastAPI, LangChain (ou pipeline maison), sentence-transformers / API LLM | Embeddings, RAG, recherche sémantique |
+| Backend (unique) | **Go**, Gin, Clean Architecture | API, RBAC, multi-tenant, RAG, ingestion, anomalies, audit |
 | Base de données vectorielle | PostgreSQL 16 + extension `pgvector` | Indexation et recherche par similarité |
-| Cache | Redis 7 | Cache des réponses fréquentes, verrous |
+| Cache | Redis 7 | Cache des réponses fréquentes, rate-limit, verrous |
 | Stockage documentaire | MinIO | Documents source (LVO/LVI, textes réglementaires) |
-| Bus d'événements | NATS (JetStream) | Ingestion asynchrone, ré-indexation |
+| Bus d'événements | NATS (JetStream) | Ingestion asynchrone, ré-indexation, notifications |
+| LLM | API tierce, appelée via passerelle Go dédiée | Génération de la réponse en langage naturel à partir du contexte RAG |
 | Web | Angular (PWA) | Portail bureaux de fret / grands comptes |
 | Mobile | Flutter (offline-first) | Application agents de terrain |
-| Desktop | Flutter Desktop | Back-office conformité |
+| Desktop | **Empaquetage natif du client Angular** (Tauri ou Electron) | Back-office conformité, gouvernance du corpus — *pas une 3ᵉ base de code* (ENF-PLT-03) |
 | Conteneurisation | Docker, Docker Compose | Environnement de développement local |
 
 ---
@@ -83,9 +100,9 @@ Ni Spring Boot ni Django ne sont retenus comme backend principal. Le projet adop
 - Docker Desktop (ou Docker Engine + Compose plugin) ≥ 24
 - Git
 - Go ≥ 1.22 (dev local hors conteneur, optionnel)
-- Python ≥ 3.12 (dev local hors conteneur, optionnel)
-- Node.js ≥ 20 + Angular CLI (pour `clients/web-angular`, à initialiser en phase 2)
-- Flutter SDK ≥ 3.22 (pour `clients/mobile-flutter` et `clients/desktop-flutter`, phase 2)
+- Node.js ≥ 20 + Angular CLI (pour `clients/web-angular`, et pour le packaging Desktop qui réutilise ce même code)
+- Flutter SDK ≥ 3.22 (pour `clients/mobile-flutter` uniquement, phase 2)
+- Rust ≥ 1.75 (si packaging Desktop en Tauri) **ou** Electron/Node (si packaging Desktop en Electron) — phase 3
 
 ---
 
@@ -105,15 +122,13 @@ docker compose up --build
 
 # 4. Vérifier que tout répond
 curl http://localhost:8080/health     # go-api
-curl http://localhost:8000/health     # ai-service
 ```
 
 Services exposés une fois `docker compose up` lancé :
 
 | Service | URL locale | Description |
 |---|---|---|
-| go-api | http://localhost:8080 | API principale |
-| ai-service | http://localhost:8000 | Service IA (interne, exposé en local pour debug) |
+| go-api | http://localhost:8080 | API principale (auth, RBAC, RAG, ingestion, anomalies) |
 | PostgreSQL | localhost:5432 | `boussolefret` / voir `.env` |
 | MinIO Console | http://localhost:9001 | Identifiants dans `.env` |
 | NATS monitoring | http://localhost:8222 | Monitoring du bus d'événements |
@@ -131,23 +146,25 @@ boussolefret-ia/
 ├── .env.example
 ├── .gitignore
 ├── services/
-│   ├── go-api/              # Backend métier (Go)
-│   │   ├── cmd/api/main.go
-│   │   ├── go.mod
-│   │   └── Dockerfile
-│   └── ai-service/          # Pipeline IA/RAG (Python/FastAPI)
-│       ├── app/main.py
-│       ├── requirements.txt
+│   └── go-api/                  # Backend unique (Go)
+│       ├── cmd/api/main.go
+│       ├── internal/
+│       │   ├── rag/             # Service RAG : recherche pgvector, appel LLM, citation sources
+│       │   ├── ingestion/       # Service Ingestion (COR) : embeddings, versionning corpus
+│       │   ├── anomalies/       # Service Anomalies (ANO) : scoring de risque
+│       │   ├── auth/            # RBAC, multi-tenant
+│       │   └── audit/           # Journal d'audit append-only
+│       ├── go.mod
 │       └── Dockerfile
 ├── clients/
-│   ├── web-angular/         # Portail web (phase 2)
-│   ├── mobile-flutter/      # App agents de terrain (phase 2)
-│   └── desktop-flutter/     # Back-office desktop (phase 2)
+│   ├── web-angular/             # Portail web (phase 1)
+│   ├── mobile-flutter/          # App agents de terrain (phase 2)
+│   └── desktop/                 # Packaging natif du client web-angular (Tauri/Electron, phase 3)
 ├── infra/
 │   └── postgres/
-│       └── init.sql         # Activation de l'extension pgvector
+│       └── init.sql             # Activation de l'extension pgvector
 └── docs/
-    └── architecture.md      # Détails d'architecture (à enrichir)
+    └── architecture.md          # Détails d'architecture (à enrichir)
 ```
 
 ---
@@ -160,29 +177,28 @@ boussolefret-ia/
 | `REDIS_URL` | URL de connexion Redis |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | Identifiants MinIO |
 | `NATS_URL` | URL du serveur NATS |
-| `AI_SERVICE_URL` | URL interne appelée par `go-api` |
-| `LLM_API_KEY` | Clé de l'API du modèle de langage utilisé par `ai-service` |
+| `LLM_API_KEY` | Clé de l'API du modèle de langage, utilisée par le module RAG de `go-api` |
 | `JWT_SECRET` | Secret de signature des jetons d'authentification |
 
 ---
 
-## 8. Feuille de route de stage (rappel)
+## 8. Feuille de route de stage (alignée sur le phasage du CDC, §13)
 
-| Semaines | Jalon |
-|---|---|
-| S1–S2 | Cadrage, corpus réglementaire, schéma pgvector, maquettes |
-| S3–S4 | Pipeline RAG : ingestion NATS → embeddings → indexation pgvector → API de recherche |
-| S5–S6 | Portail Angular, app Flutter mobile, première version desktop |
-| S7 | Détection d'anomalies documentaires, journal d'audit |
-| S8 | Consolidation, tests, démonstration à la Direction Technique |
+| Phase CDC | Semaines | Jalon |
+|---|---|---|
+| Phase 0 — Validation | S1–S2 | Cadrage, corpus réglementaire, schéma pgvector, maquettes, verrous Go/No-Go |
+| Phase 1 — MVP RAG + Web | S3–S4 | Pipeline RAG : ingestion NATS → embeddings → indexation pgvector → API de recherche + client Web |
+| Phase 2 — Mobile + Anomalies | S5–S6 | App Flutter mobile (offline-first), détection d'anomalies documentaires |
+| Phase 3 — Desktop + Multi-bureau | S7 | Packaging Desktop (Tauri/Electron sur client Angular), journal d'audit, isolation multi-tenant |
+| Consolidation | S8 | Tests, démonstration à la Direction Technique |
 
 ---
 
 ## 9. Conventions de travail
 
 - Branches : `feature/<module>-<courte-description>`, `fix/<courte-description>`
-- Commits : préfixe par module (`go-api:`, `ai-service:`, `docs:`, `infra:`) suivi d'un résumé court à l'impératif
-- Un service = un conteneur = un `Dockerfile` propre à lui ; pas de dépendance croisée en dur entre `go-api` et `ai-service` autre que l'API REST interne
+- Commits : préfixe par module (`go-api:`, `rag:`, `ingestion:`, `anomalies:`, `docs:`, `infra:`) suivi d'un résumé court à l'impératif
+- Un seul backend (`go-api`), modulaire en interne (Clean Architecture) ; toute nouvelle brique métier reste en Go, conformément au CDC — aucune logique de pertinence ou de seuil ne doit être portée par un client ou par un service dans un autre langage
 
 ---
 
