@@ -15,6 +15,7 @@ type Config struct {
 	LLMAPIURL       string
 	LLMAPIKey       string
 	EmbeddingsModel string
+	ChatModel       string
 	SimilarityMin   float64 // seuil d'abstention EF-RAG-03
 }
 
@@ -26,6 +27,7 @@ func Load() Config {
 		LLMAPIURL:       mustGetEnv("LLM_API_URL"),
 		LLMAPIKey:       mustGetEnv("LLM_API_KEY"),
 		EmbeddingsModel: getEnv("EMBEDDINGS_MODEL", "text-embedding-3-small"),
+		ChatModel:       getEnv("LLM_CHAT_MODEL", "gpt-4o-mini"),
 		SimilarityMin:   getEnvFloat("SIMILARITY_MIN", 0.72),
 	}
 }

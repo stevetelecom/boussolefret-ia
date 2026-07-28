@@ -13,9 +13,18 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/flysoft/boussolefret-ia/go-api/internal/config"
+	"github.com/flysoft/boussolefret-ia/go-api/internal/corpus"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/db"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/documents"
+	"github.com/flysoft/boussolefret-ia/go-api/internal/llm"
 )
+
+// tenantDefault : bureau pilote unique pour l'instant (Phase 1 du CDC).
+// Sera remplacé par la résolution multi-tenant réelle (RBAC/JWT) en Phase 3.
+const tenantDefault = "BGFT"
+
+// topKChunks : nombre de fragments remontés par la recherche par similarité.
+const topKChunks = 5
 
 func main() {
 	cfg := config.Load()
@@ -27,6 +36,9 @@ func main() {
 	defer pool.Close()
 
 	docRepo := documents.NewRepository(pool)
+	corpusRepo := corpus.NewRepository(pool)
+	embeddingsClient := llm.NewEmbeddingsClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.EmbeddingsModel)
+	chatClient := llm.NewChatClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.ChatModel)
 
 	router := gin.Default()
 	router.Use(func(c *gin.Context) {
@@ -172,9 +184,9 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
-	// --- /ask reste simulé volontairement : le vrai moteur RAG (pgvector +
-	// LLM + abstention obligatoire EF-RAG-03) arrive dans la prochaine étape,
-	// une fois cette fondation validée en local.
+	// --- /ask : moteur RAG réel. Abstention obligatoire (EF-RAG-03) si la
+	// meilleure similarité trouvée est sous le seuil configuré : on ne laisse
+	// jamais le LLM répondre de mémoire sans source fiable.
 	router.POST("/ask", func(c *gin.Context) {
 		var req struct {
 			Question string `json:"question"`
@@ -183,8 +195,55 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
 			return
 		}
-		answer := "Réponse simulée pour : " + req.Question
-		c.JSON(http.StatusOK, gin.H{"answer": answer, "sources": []string{"LVO_2026.pdf"}})
+		question := strings.TrimSpace(req.Question)
+		if question == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "la question est obligatoire"})
+			return
+		}
+
+		ctx := c.Request.Context()
+
+		queryEmbedding, err := embeddingsClient.Embed(ctx, question)
+		if err != nil {
+			log.Printf("erreur embedding question: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+
+		chunks, err := corpusRepo.SearchSimilar(ctx, tenantDefault, queryEmbedding, topKChunks)
+		if err != nil {
+			log.Printf("erreur recherche similarité: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+
+		if len(chunks) == 0 || chunks[0].Similarity < cfg.SimilarityMin {
+			c.JSON(http.StatusOK, gin.H{
+				"answer":  "Je ne dispose pas d'une source suffisamment fiable dans le corpus pour répondre à cette question. Merci de contacter le responsable conformité.",
+				"sources": []string{},
+			})
+			return
+		}
+
+		var contextBuilder strings.Builder
+		sourcesSeen := make(map[string]bool)
+		sources := make([]string, 0, len(chunks))
+		for _, ch := range chunks {
+			contextBuilder.WriteString("Source: " + ch.Source + "\n" + ch.Content + "\n\n")
+			if !sourcesSeen[ch.Source] {
+				sourcesSeen[ch.Source] = true
+				sources = append(sources, ch.Source)
+			}
+		}
+
+		answer, err := chatClient.Answer(ctx, question, contextBuilder.String())
+		if err != nil {
+			log.Printf("erreur génération réponse LLM: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"answer": answer, "sources": sources})
 	})
 
 	log.Printf("go-api démarre sur le port %s", cfg.Port)
