@@ -6,7 +6,7 @@ COPY package.json package-lock.json* ./
 COPY tsconfig.json tsconfig.app.json ./
 COPY angular.json ./
 COPY src ./src
-RUN npm install && npm run build -- --configuration production
+RUN npm install --legacy-peer-deps && npm run build -- --configuration production
 
 FROM nginx:stable-alpine
 COPY nginx.conf /etc/nginx/nginx.conf

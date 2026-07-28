@@ -1,8 +1,10 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-modal',
   standalone: true,
+  imports: [CommonModule],
   template: `
     <div class="modal-backdrop" *ngIf="show" (click)="onCancel()"></div>
     <section class="modal" *ngIf="show" role="dialog" aria-modal="true">
@@ -37,9 +39,15 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 export class ModalComponent {
   @Input() title = '';
   @Input() show = false;
+  @Output() showChange = new EventEmitter<boolean>();
   @Output() close = new EventEmitter<void>();
   @Output() save = new EventEmitter<void>();
 
-  onCancel() { this.close.emit(); }
+  onCancel() {
+    this.show = false;
+    this.showChange.emit(false);
+    this.close.emit();
+  }
+
   onSave() { this.save.emit(); }
 }

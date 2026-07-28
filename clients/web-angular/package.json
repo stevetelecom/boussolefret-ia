@@ -16,13 +16,14 @@
     "@angular/router": "^17.3.12",
     "rxjs": "~7.6.0",
     "tslib": "^2.3.0",
-    "zone.js": "~0.14.0"
+    "zone.js": "~0.14.0",
+    "@angular/forms": "^17.3.12"
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "^17.3.12",
     "@angular/cli": "^17.3.12",
     "@angular/compiler-cli": "^17.3.12",
     "@types/node": "^20.14.10",
-    "typescript": "~5.4.10"
+    "typescript": "~5.4.5"
   }
 }

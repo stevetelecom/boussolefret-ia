@@ -16,7 +16,7 @@ interface ChatMsg { from: 'user'|'bot'; text: string }
           <div>
             <p class="eyebrow">Assistant réglementaire</p>
             <h2>Posez votre question</h2>
-            <p>Le système répondra avec des sources (phase 1 : mock ou proxy vers `ai-service`).</p>
+            <p>Le système répondra avec des sources (phase 1 : mock ou proxy vers &#96;ai-service&#96;).</p>
           </div>
         </header>
 
