@@ -59,25 +59,6 @@ services:
       - "4222:4222"   # client
       - "8222:8222"   # monitoring
 
-  ai-service:
-    build:
-      context: ./services/ai-service
-    container_name: bf_ai_service
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      NATS_URL: nats://nats:4222
-    depends_on:
-      postgres:
-        condition: service_healthy
-      nats:
-        condition: service_started
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./services/ai-service:/app
-
   go-api:
     build:
       context: ./services/go-api
@@ -89,7 +70,6 @@ services:
       REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
       MINIO_ENDPOINT: minio:9000
-      AI_SERVICE_URL: http://ai-service:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,8 +78,6 @@ services:
       minio:
         condition: service_started
       nats:
-        condition: service_started
-      ai-service:
         condition: service_started
     ports:
       - "8080:8080"

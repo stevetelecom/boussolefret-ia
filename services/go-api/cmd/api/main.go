@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -28,7 +26,7 @@ var (
 func main() {
 	router := gin.Default()
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
 		if c.Request.Method == http.MethodOptions {
@@ -44,7 +42,9 @@ func main() {
 
 	// Auth (mock) with JWT
 	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" { jwtSecret = "dev-secret" }
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET must be set")
+	}
 
 	router.POST("/auth/login", func(c *gin.Context) {
 		var req struct{
@@ -52,14 +52,17 @@ func main() {
 			Password string `json:"password"`
 		}
 		if err := c.BindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 			return
 		}
-		if req.Email == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing email"})
+		if req.Email == "" || req.Password == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing credentials"})
 			return
 		}
-		// create JWT
+		if req.Password != "BoussoleFret2026!" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			return
+		}
 		claims := jwt.RegisteredClaims{
 			Subject:   req.Email,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
@@ -137,21 +140,16 @@ func main() {
 		c.JSON(http.StatusNotFound, gin.H{"error":"not found"})
 	})
 
-	// Ask proxy to ai-service
-	aiURL := os.Getenv("AI_SERVICE_URL")
-	if aiURL == "" { aiURL = "http://ai-service:8000" }
-
 	router.POST("/ask", func(c *gin.Context) {
-		body, _ := io.ReadAll(c.Request.Body)
-		// forward to ai-service
-		resp, err := http.Post(aiURL+"/ask", "application/json", bytes.NewReader(body))
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": "ai-service unreachable"})
+		var req struct{
+			Question string `json:"question"`
+		}
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 			return
 		}
-		defer resp.Body.Close()
-		data, _ := io.ReadAll(resp.Body)
-		c.Data(resp.StatusCode, "application/json", data)
+		answer := "Réponse simulée pour : " + req.Question
+		c.JSON(http.StatusOK, gin.H{"answer": answer, "sources": []string{"LVO_2026.pdf"}})
 	})
 
 	port := os.Getenv("PORT")

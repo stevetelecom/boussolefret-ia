@@ -16,7 +16,7 @@ interface ChatMsg { from: 'user'|'bot'; text: string }
           <div>
             <p class="eyebrow">Assistant réglementaire</p>
             <h2>Posez votre question</h2>
-            <p>Le système répondra avec des sources (phase 1 : mock ou proxy vers &#96;ai-service&#96;).</p>
+            <p>Le système répondra avec des sources (phase 1 : mock).</p>
           </div>
         </header>
 
@@ -65,7 +65,7 @@ export class AskPageComponent {
         return;
       }
       const data = await res.json();
-      // adapt to ai-service response shape
+      // adapt to response shape
       if (data.answer) {
         this.msgs.push({ from: 'bot', text: data.answer + (data.sources ? ' · Sources: ' + data.sources.join(', ') : '') });
       } else {
