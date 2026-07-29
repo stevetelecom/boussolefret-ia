@@ -21,19 +21,36 @@ import { AuthService } from '../../core/auth.service';
         <form class="auth-form" (ngSubmit)="handleLogin()">
           <label>
             <span>Email</span>
-            <input type="email" placeholder="agent@bureaufret.cm" [(ngModel)]="email" name="email" />
+            <input type="email" placeholder="agent@bureaufret.cm" [(ngModel)]="email" name="email" autocomplete="username" />
           </label>
           <label>
             <span>Mot de passe</span>
-            <input type="password" placeholder="••••••••" [(ngModel)]="password" name="password" />
+            <div class="password-field">
+              <input
+                [type]="showPassword ? 'text' : 'password'"
+                placeholder="••••••••"
+                [(ngModel)]="password"
+                name="password"
+                autocomplete="current-password"
+              />
+              <button
+                type="button"
+                class="icon-toggle"
+                (click)="togglePassword()"
+                [attr.aria-label]="showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'"
+              >
+                <span class="material-icons-outlined">{{ showPassword ? 'visibility_off' : 'visibility' }}</span>
+              </button>
+            </div>
           </label>
 
-          <button type="submit">Se connecter</button>
+          <button type="submit" [disabled]="loading">{{ loading ? 'Connexion…' : 'Se connecter' }}</button>
+          <p class="form-error" *ngIf="errorMessage">{{ errorMessage }}</p>
         </form>
 
         <div class="security-note">
-          <span>🔐</span>
-          <p>Connexion protégée avec contrôle d’accès et journal d’audit prévu en phase 1.</p>
+          <span class="material-icons-outlined">lock</span>
+          <p>Connexion protégée par jeton JWT ; journal d'audit prévu en phase 3.</p>
         </div>
       </div>
     </section>
@@ -62,13 +79,30 @@ import { AuthService } from '../../core/auth.service';
       .auth-form { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 1.3rem; }
       .auth-form label { display: flex; flex-direction: column; gap: 0.45rem; color: var(--muted); }
       .auth-form input {
+        width: 100%;
         padding: 0.9rem 1rem;
         border: 1px solid var(--border);
         border-radius: 14px;
         background: rgba(255,255,255,0.04);
         color: var(--text);
+        box-sizing: border-box;
       }
-      .auth-form button {
+      .password-field { position: relative; display: flex; align-items: center; }
+      .password-field input { padding-right: 2.8rem; }
+      .icon-toggle {
+        position: absolute;
+        right: 0.6rem;
+        background: transparent;
+        border: 0;
+        color: var(--muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        padding: 0.3rem;
+        border-radius: 8px;
+      }
+      .icon-toggle:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+      .auth-form button[type="submit"] {
         margin-top: 0.5rem;
         border: 0;
         border-radius: 999px;
@@ -76,7 +110,10 @@ import { AuthService } from '../../core/auth.service';
         background: linear-gradient(135deg, var(--accent), var(--accent-strong));
         color: var(--bg);
         font-weight: 700;
+        cursor: pointer;
       }
+      .auth-form button[type="submit"]:disabled { opacity: 0.6; cursor: not-allowed; }
+      .form-error { color: #ff8f8f; margin: 0; font-size: 0.9rem; }
       .security-note {
         display: flex;
         align-items: flex-start;
@@ -93,15 +130,28 @@ import { AuthService } from '../../core/auth.service';
 export class LoginPageComponent {
   email = '';
   password = '';
+  showPassword = false;
+  loading = false;
+  errorMessage = '';
 
   constructor(private readonly router: Router, private readonly auth: AuthService) {}
 
+  togglePassword(): void {
+    this.showPassword = !this.showPassword;
+  }
+
   async handleLogin(): Promise<void> {
-    const ok = await this.auth.login(this.email, this.password);
-    if (ok) {
-      this.router.navigate(['/dashboard']);
-    } else {
-      alert('Identifiants invalides');
+    this.errorMessage = '';
+    this.loading = true;
+    try {
+      const ok = await this.auth.login(this.email, this.password);
+      if (ok) {
+        this.router.navigate(['/dashboard']);
+      } else {
+        this.errorMessage = 'Identifiants invalides.';
+      }
+    } finally {
+      this.loading = false;
     }
   }
 }

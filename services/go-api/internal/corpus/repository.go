@@ -79,3 +79,62 @@ func (r *Repository) SearchSimilar(ctx context.Context, tenantID string, embeddi
 	}
 	return results, rows.Err()
 }
+
+// SourceSummary résume le corpus indexé pour l'écran "Voir les sources".
+type SourceSummary struct {
+	Source string `json:"source"`
+	Chunks int    `json:"chunks"`
+}
+
+// ListSources retourne, par tenant, chaque document source ingéré et son
+// nombre de fragments indexés — utilisé par le front pour afficher ce qui
+// alimente réellement le moteur RAG.
+func (r *Repository) ListSources(ctx context.Context, tenantID string) ([]SourceSummary, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT source, COUNT(*) FROM document_chunks WHERE tenant_id = $1 GROUP BY source ORDER BY source`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("liste des sources: %w", err)
+	}
+	defer rows.Close()
+
+	sources := make([]SourceSummary, 0)
+	for rows.Next() {
+		var s SourceSummary
+		if err := rows.Scan(&s.Source, &s.Chunks); err != nil {
+			return nil, fmt.Errorf("lecture source: %w", err)
+		}
+		sources = append(sources, s)
+	}
+	return sources, rows.Err()
+}
+
+// SourceSummary résume le corpus indexé pour l'écran "Voir les sources".
+type SourceSummary struct {
+	Source string `json:"source"`
+	Chunks int    `json:"chunks"`
+}
+
+// ListSources retourne, par tenant, chaque document source ingéré et son
+// nombre de fragments indexés.
+func (r *Repository) ListSources(ctx context.Context, tenantID string) ([]SourceSummary, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT source, COUNT(*) FROM document_chunks WHERE tenant_id = $1 GROUP BY source ORDER BY source`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("liste des sources: %w", err)
+	}
+	defer rows.Close()
+
+	sources := make([]SourceSummary, 0)
+	for rows.Next() {
+		var s SourceSummary
+		if err := rows.Scan(&s.Source, &s.Chunks); err != nil {
+			return nil, fmt.Errorf("lecture source: %w", err)
+		}
+		sources = append(sources, s)
+	}
+	return sources, rows.Err()
+}

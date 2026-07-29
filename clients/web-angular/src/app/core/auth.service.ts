@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private storageKey = 'bf_user_token';
-  private apiBase = 'http://localhost:8080';
+  readonly apiBase = 'http://localhost:8080';
 
   async login(email: string, password: string): Promise<boolean> {
     try {
@@ -49,5 +49,26 @@ export class AuthService {
 
   getToken(): string | null {
     return localStorage.getItem(this.storageKey);
+  }
+
+  /**
+   * Enrobe fetch() en y ajoutant automatiquement le jeton Bearer.
+   * Toute route protégée du backend DOIT passer par ici — jamais un fetch()
+   * nu vers l'API, sinon la requête échoue silencieusement en 401.
+   * Sur un 401, on déconnecte et on renvoie vers /login plutôt que de
+   * laisser l'écran dans un état incohérent.
+   */
+  async authFetch(path: string, options: RequestInit = {}): Promise<Response> {
+    const token = this.getToken();
+    const headers = new Headers(options.headers || {});
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+
+    const res = await fetch(`${this.apiBase}${path}`, { ...options, headers });
+    if (res.status === 401) {
+      this.logout();
+      window.location.href = '/login';
+    }
+    return res;
   }
 }

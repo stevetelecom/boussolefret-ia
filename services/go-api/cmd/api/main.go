@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	authmw "github.com/flysoft/boussolefret-ia/go-api/internal/auth"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/config"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/corpus"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/db"
@@ -19,12 +20,11 @@ import (
 	"github.com/flysoft/boussolefret-ia/go-api/internal/llm"
 )
 
-// tenantDefault : bureau pilote unique pour l'instant (Phase 1 du CDC).
-// Sera remplacé par la résolution multi-tenant réelle (RBAC/JWT) en Phase 3.
 const tenantDefault = "BGFT"
-
-// topKChunks : nombre de fragments remontés par la recherche par similarité.
 const topKChunks = 5
+const chunkMaxRunes = 1500
+const chunkOverlap = 200
+const maxIngestBytes = 2_000_000
 
 func main() {
 	cfg := config.Load()
@@ -108,7 +108,10 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"valid": true})
 	})
 
-	router.GET("/documents", func(c *gin.Context) {
+	protected := router.Group("/")
+	protected.Use(authmw.RequireJWT(cfg.JWTSecret))
+
+	protected.GET("/documents", func(c *gin.Context) {
 		docs, err := docRepo.List(c.Request.Context())
 		if err != nil {
 			log.Printf("erreur liste documents: %v", err)
@@ -118,7 +121,7 @@ func main() {
 		c.JSON(http.StatusOK, docs)
 	})
 
-	router.POST("/documents", func(c *gin.Context) {
+	protected.POST("/documents", func(c *gin.Context) {
 		var d documents.Document
 		if err := c.BindJSON(&d); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
@@ -137,7 +140,7 @@ func main() {
 		c.JSON(http.StatusCreated, created)
 	})
 
-	router.PUT("/documents/:id", func(c *gin.Context) {
+	protected.PUT("/documents/:id", func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
@@ -165,7 +168,7 @@ func main() {
 		c.JSON(http.StatusOK, updated)
 	})
 
-	router.DELETE("/documents/:id", func(c *gin.Context) {
+	protected.DELETE("/documents/:id", func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
@@ -184,10 +187,64 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
-	// --- /ask : moteur RAG réel. Abstention obligatoire (EF-RAG-03) si la
-	// meilleure similarité trouvée est sous le seuil configuré : on ne laisse
-	// jamais le LLM répondre de mémoire sans source fiable.
-	router.POST("/ask", func(c *gin.Context) {
+	protected.GET("/corpus", func(c *gin.Context) {
+		sources, err := corpusRepo.ListSources(c.Request.Context(), tenantDefault)
+		if err != nil {
+			log.Printf("erreur liste sources corpus: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		c.JSON(http.StatusOK, sources)
+	})
+
+	protected.POST("/corpus", func(c *gin.Context) {
+		var req struct {
+			Source  string `json:"source"`
+			Content string `json:"content"`
+		}
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
+			return
+		}
+		source := strings.TrimSpace(req.Source)
+		content := strings.TrimSpace(req.Content)
+		if source == "" || content == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source et content sont obligatoires"})
+			return
+		}
+		if len(content) > maxIngestBytes {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "document trop volumineux"})
+			return
+		}
+
+		ctx := c.Request.Context()
+		chunks := corpus.SplitIntoChunks(content, chunkMaxRunes, chunkOverlap)
+
+		inserted := 0
+		for _, chunk := range chunks {
+			embedding, err := embeddingsClient.Embed(ctx, chunk)
+			if err != nil {
+				log.Printf("erreur embedding chunk (%s): %v", source, err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "échec d'indexation en cours de traitement", "inserted": inserted, "total": len(chunks),
+				})
+				return
+			}
+			if err := corpusRepo.Insert(ctx, tenantDefault, source, chunk, embedding); err != nil {
+				log.Printf("erreur insertion chunk (%s): %v", source, err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "échec d'indexation en cours de traitement", "inserted": inserted, "total": len(chunks),
+				})
+				return
+			}
+			inserted++
+		}
+
+		log.Printf("corpus ingéré: source=%s chunks=%d par=%s", source, inserted, authmw.CurrentUser(c))
+		c.JSON(http.StatusCreated, gin.H{"source": source, "chunks_indexed": inserted})
+	})
+
+	protected.POST("/ask", func(c *gin.Context) {
 		var req struct {
 			Question string `json:"question"`
 		}
