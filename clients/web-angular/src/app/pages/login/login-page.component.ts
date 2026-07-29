@@ -85,8 +85,8 @@ interface DemoAccount {
 
       <div class="hero-panel">
         <video class="hero-video" autoplay loop muted playsinline
-          poster="https://images.pexels.com/videos/3840442/aerial-barge-boat-business-3840442.jpeg?auto=compress&cs=tinysrgb&h=900&fit=crop&w=1600">
-          <source src="https://videos.pexels.com/video-files/3840442/3840442-uhd_2560_1440_30fps.mp4" type="video/mp4" />
+          poster="https://images.pexels.com/videos/17899033/pexels-photo-17899033.jpeg?auto=compress&cs=tinysrgb&h=900&fit=crop&w=1600">
+          <source src="https://videos.pexels.com/video-files/17899033/17899033-hd_1920_1080_24fps.mp4" type="video/mp4" />
         </video>
         <div class="hero-overlay"></div>
 
