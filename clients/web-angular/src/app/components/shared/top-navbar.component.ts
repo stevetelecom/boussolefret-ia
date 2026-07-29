@@ -14,11 +14,6 @@ interface CemacCountry {
 // zone CEMAC, pas un sélecteur de tenant.
 const CEMAC_COUNTRIES: CemacCountry[] = [
   { code: 'cm', name: 'Cameroun' },
-  { code: 'ga', name: 'Gabon' },
-  { code: 'cg', name: 'Congo' },
-  { code: 'td', name: 'Tchad' },
-  { code: 'cf', name: 'République centrafricaine' },
-  { code: 'gq', name: 'Guinée équatoriale' },
 ];
 
 @Component({
