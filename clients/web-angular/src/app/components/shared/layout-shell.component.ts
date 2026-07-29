@@ -3,16 +3,17 @@ import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 import { LangService } from '../../core/lang.service';
 import { TopNavbarComponent } from './top-navbar.component';
+import { LogoMarkComponent } from './logo-mark.component';
 
 @Component({
   selector: 'app-layout-shell',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, TopNavbarComponent],
+  imports: [RouterLink, RouterLinkActive, TopNavbarComponent, LogoMarkComponent],
   template: `
     <div class="shell">
       <aside class="sidebar card">
         <div class="brand">
-          <div class="brand__mark">BF</div>
+          <app-logo-mark [size]="48" />
           <div>
             <h1>BoussoleFret IA</h1>
             <p>{{ lang.t('brand.tagline') }}</p>

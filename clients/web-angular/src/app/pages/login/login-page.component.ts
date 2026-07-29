@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import { I18nService, Lang } from '../../core/i18n.service';
+import { LogoMarkComponent } from '../../components/shared/logo-mark.component';
 
 interface DemoAccount {
   label: string;
@@ -15,11 +16,12 @@ interface DemoAccount {
 @Component({
   selector: 'app-login-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, LogoMarkComponent],
   template: `
     <section class="auth-screen">
       <div class="auth-panel">
         <div class="auth-card card animate-in">
+          <app-logo-mark [size]="56" />
           <div class="auth-card__intro">
             <p class="eyebrow">{{ i18n.t('eyebrow') }}</p>
             <h1>{{ i18n.t('loginTitle') }}</h1>
@@ -113,6 +115,7 @@ interface DemoAccount {
         padding: 1.5rem;
       }
       .auth-card { width: min(460px, 100%); padding: 2rem; }
+      app-logo-mark { display: block; margin-bottom: 1rem; }
       .eyebrow {
         text-transform: uppercase;
         letter-spacing: 0.2em;
