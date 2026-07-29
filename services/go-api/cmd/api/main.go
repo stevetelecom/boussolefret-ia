@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 
 	authmw "github.com/flysoft/boussolefret-ia/go-api/internal/auth"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/config"
@@ -19,6 +20,7 @@ import (
 	"github.com/flysoft/boussolefret-ia/go-api/internal/documents"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/history"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/llm"
+	"github.com/flysoft/boussolefret-ia/go-api/internal/users"
 )
 
 const tenantDefault = "BGFT"
@@ -40,6 +42,7 @@ func main() {
 	docRepo := documents.NewRepository(pool)
 	corpusRepo := corpus.NewRepository(pool)
 	historyRepo := history.NewRepository(pool)
+	usersRepo := users.NewRepository(pool)
 	embeddingsClient := llm.NewEmbeddingsClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.EmbeddingsModel)
 	chatClient := llm.NewChatClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.ChatModel)
 
@@ -78,14 +81,30 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "identifiants manquants"})
 			return
 		}
-		if req.Password != "BoussoleFret2026!" {
+
+		user, err := usersRepo.FindByEmail(c.Request.Context(), req.Email)
+		if errors.Is(err, users.ErrNotFound) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "identifiants invalides"})
 			return
 		}
-		claims := jwt.RegisteredClaims{
-			Subject:   req.Email,
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		if err != nil {
+			log.Printf("erreur recherche utilisateur: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "identifiants invalides"})
+			return
+		}
+
+		claims := authmw.Claims{
+			Role:     user.Role,
+			TenantID: user.TenantID,
+			RegisteredClaims: jwt.RegisteredClaims{
+				Subject:   req.Email,
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+				IssuedAt:  jwt.NewNumericDate(time.Now()),
+			},
 		}
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 		signed, err := token.SignedString([]byte(cfg.JWTSecret))
@@ -114,6 +133,15 @@ func main() {
 	protected := router.Group("/")
 	protected.Use(authmw.RequireJWT(cfg.JWTSecret))
 
+	// Écriture documents + historique + gouvernance corpus : réservées aux
+	// profils responsables (le CDC exclut Agent/Chargeur de ces actions).
+	conformite := protected.Group("/")
+	conformite.Use(authmw.RequireRole(users.RoleAdminCorpus, users.RoleResponsableConformite))
+
+	// Ingestion du corpus réglementaire : rôle Administrateur corpus uniquement.
+	corpusAdmin := protected.Group("/")
+	corpusAdmin.Use(authmw.RequireRole(users.RoleAdminCorpus))
+
 	protected.GET("/documents", func(c *gin.Context) {
 		docs, err := docRepo.List(c.Request.Context())
 		if err != nil {
@@ -124,7 +152,7 @@ func main() {
 		c.JSON(http.StatusOK, docs)
 	})
 
-	protected.POST("/documents", func(c *gin.Context) {
+	conformite.POST("/documents", func(c *gin.Context) {
 		var d documents.Document
 		if err := c.BindJSON(&d); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
@@ -143,7 +171,7 @@ func main() {
 		c.JSON(http.StatusCreated, created)
 	})
 
-	protected.PUT("/documents/:id", func(c *gin.Context) {
+	conformite.PUT("/documents/:id", func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
@@ -171,7 +199,7 @@ func main() {
 		c.JSON(http.StatusOK, updated)
 	})
 
-	protected.DELETE("/documents/:id", func(c *gin.Context) {
+	conformite.DELETE("/documents/:id", func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
@@ -190,7 +218,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
-	protected.GET("/corpus", func(c *gin.Context) {
+	corpusAdmin.GET("/corpus", func(c *gin.Context) {
 		sources, err := corpusRepo.ListSources(c.Request.Context(), tenantDefault)
 		if err != nil {
 			log.Printf("erreur liste sources corpus: %v", err)
@@ -200,7 +228,7 @@ func main() {
 		c.JSON(http.StatusOK, sources)
 	})
 
-	protected.POST("/corpus", func(c *gin.Context) {
+	corpusAdmin.POST("/corpus", func(c *gin.Context) {
 		var req struct {
 			Source  string `json:"source"`
 			Content string `json:"content"`
@@ -319,7 +347,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"answer": answer, "sources": sources})
 	})
 
-	protected.GET("/history", func(c *gin.Context) {
+	conformite.GET("/history", func(c *gin.Context) {
 		limit := historyDefaultLimit
 		if raw := c.Query("limit"); raw != "" {
 			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 100 {

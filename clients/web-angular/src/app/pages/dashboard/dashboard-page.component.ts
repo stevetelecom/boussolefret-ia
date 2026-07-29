@@ -1,10 +1,30 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { LayoutShellComponent } from '../../components/shared/layout-shell.component';
+import { AuthService } from '../../core/auth.service';
+
+interface HistoryEntry {
+  id: number;
+  question: string;
+  answer: string;
+  sources: string[];
+  best_similarity?: number;
+  abstained: boolean;
+  user_email: string;
+  created_at: string;
+}
+
+interface DocSummary {
+  id: number;
+  name: string;
+  status: string;
+}
 
 @Component({
   selector: 'app-dashboard-page',
   standalone: true,
-  imports: [LayoutShellComponent],
+  imports: [LayoutShellComponent, CommonModule, RouterLink],
   template: `
     <app-layout-shell>
       <section class="page animate-in">
@@ -15,22 +35,30 @@ import { LayoutShellComponent } from '../../components/shared/layout-shell.compo
             <p>Posez vos questions réglementaires, consultez les sources et identifiez les documents atypiques.</p>
           </div>
           <div class="hero__actions">
-            <button class="primary">+ Nouvelle requête</button>
-            <button class="secondary">Voir les sources</button>
+            <button class="primary" routerLink="/ask">
+              <span class="material-icons-outlined">add</span>
+              Nouvelle requête
+            </button>
+            <button class="secondary" routerLink="/documents">
+              <span class="material-icons-outlined">source</span>
+              Voir les sources
+            </button>
           </div>
         </header>
 
+        <p class="form-error" *ngIf="loadError">{{ loadError }}</p>
+
         <div class="stats-grid">
           <article class="card stat-card">
-            <strong>24</strong>
-            <span>Questions aujourd’hui</span>
+            <strong>{{ questionsToday }}</strong>
+            <span>Questions aujourd'hui</span>
           </article>
           <article class="card stat-card">
-            <strong>93%</strong>
+            <strong>{{ sourcedPct }}%</strong>
             <span>Réponses avec source</span>
           </article>
           <article class="card stat-card">
-            <strong>7</strong>
+            <strong>{{ docsToReview }}</strong>
             <span>Documents à reviewer</span>
           </article>
         </div>
@@ -39,19 +67,23 @@ import { LayoutShellComponent } from '../../components/shared/layout-shell.compo
           <section class="card panel">
             <div class="panel__header">
               <h3>Dernières questions</h3>
-              <a href="#">Tout voir</a>
+              <a routerLink="/ask">Tout voir</a>
             </div>
-            <ul>
-              <li><strong>Quota 60/40</strong><span>Réponse validée · LVO</span></li>
-              <li><strong>Document de mission incomplet</strong><span>Analyse en cours</span></li>
-              <li><strong>Réglementation CEMAC</strong><span>Source citée · 2 documents</span></li>
+            <ul *ngIf="recentQuestions.length; else noHistory">
+              <li *ngFor="let q of recentQuestions">
+                <strong>{{ q.question }}</strong>
+                <span>{{ q.abstained ? 'Abstention · aucune source fiable' : ('Réponse citée · ' + q.sources.length + ' document(s)') }}</span>
+              </li>
             </ul>
+            <ng-template #noHistory>
+              <p class="empty-state">Aucune question posée pour le moment.</p>
+            </ng-template>
           </section>
 
           <section class="card panel">
             <div class="panel__header">
               <h3>Alertes documentaires</h3>
-              <a href="#">Gérer</a>
+              <a routerLink="/documents">Gérer</a>
             </div>
             <div class="alert-box">
               <p>Un document présente un écart significatif par rapport au corpus habituel.</p>
@@ -80,6 +112,10 @@ import { LayoutShellComponent } from '../../components/shared/layout-shell.compo
         border-radius: 999px;
         padding: 0.8rem 1rem;
         font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        cursor: pointer;
       }
       .hero__actions .primary, .alert-box button { background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: var(--bg); }
       .hero__actions .secondary { background: rgba(255,255,255,0.06); color: var(--text); }
@@ -94,10 +130,56 @@ import { LayoutShellComponent } from '../../components/shared/layout-shell.compo
       .panel ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.7rem; }
       .panel li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.85rem 0; border-bottom: 1px solid var(--border); }
       .panel li span { color: var(--muted); font-size: 0.9rem; }
+      .empty-state { color: var(--muted); padding: 0.85rem 0; }
       .alert-box { padding: 1rem; border-radius: 16px; background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.2); }
+      .form-error { color: #ff8080; }
       @media (max-width: 900px) { .stats-grid, .panel-grid { grid-template-columns: 1fr; } }
       @media (max-width: 640px) { .hero { flex-direction: column; align-items: flex-start; } }
     `,
   ],
 })
-export class DashboardPageComponent {}
+export class DashboardPageComponent implements OnInit {
+  loadError = '';
+  history: HistoryEntry[] = [];
+  documents: DocSummary[] = [];
+
+  constructor(private readonly auth: AuthService) {}
+
+  async ngOnInit(): Promise<void> {
+    try {
+      const [historyRes, docsRes] = await Promise.all([
+        this.auth.authFetch('/history?limit=50'),
+        this.auth.authFetch('/documents'),
+      ]);
+      if (!historyRes.ok || !docsRes.ok) {
+        this.loadError = 'Impossible de charger les données du dashboard.';
+        return;
+      }
+      this.history = await historyRes.json();
+      this.documents = await docsRes.json();
+      this.loadError = '';
+    } catch (e) {
+      console.error(e);
+      this.loadError = 'Erreur réseau lors du chargement du dashboard.';
+    }
+  }
+
+  get recentQuestions(): HistoryEntry[] {
+    return this.history.slice(0, 3);
+  }
+
+  get questionsToday(): number {
+    const today = new Date().toISOString().slice(0, 10);
+    return this.history.filter((h) => h.created_at && h.created_at.startsWith(today)).length;
+  }
+
+  get sourcedPct(): number {
+    if (this.history.length === 0) return 0;
+    const sourced = this.history.filter((h) => !h.abstained).length;
+    return Math.round((sourced / this.history.length) * 100);
+  }
+
+  get docsToReview(): number {
+    return this.documents.filter((d) => d.status !== 'Validé').length;
+  }
+}

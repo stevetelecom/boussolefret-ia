@@ -52,3 +52,26 @@ CREATE TABLE IF NOT EXISTS qa_history (
 CREATE INDEX IF NOT EXISTS idx_qa_history_tenant_created
     ON qa_history (tenant_id, created_at DESC);
 
+
+-- Utilisateurs et RBAC (CDC: Administrateur corpus, Responsable conformité,
+-- Agent, Chargeur). Un seul mot de passe partagé n'est plus acceptable dès
+-- que plusieurs profils métier coexistent.
+CREATE TABLE IF NOT EXISTS users (
+    id            BIGSERIAL PRIMARY KEY,
+    tenant_id     TEXT NOT NULL,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL CHECK (role IN ('admin_corpus', 'responsable_conformite', 'agent', 'chargeur')),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON users (tenant_id);
+
+-- Comptes de démo, un par rôle, tous avec le mot de passe BoussoleFret2026!
+-- (hash bcrypt réel, jamais de mot de passe en clair en base).
+INSERT INTO users (tenant_id, email, password_hash, role) VALUES
+    ('BGFT', 'admin@bgft.cm', '$2b$10$rR.UlRj743q8CMRWMIUh7u/J4bClChsThVvWkEKfC7XYTj2UDgkAO', 'admin_corpus'),
+    ('BGFT', 'conformite@bgft.cm', '$2b$10$faCvQBJApb/XTEo3XPz3MOmFFAHwRT13SRGotmBzNhn6pm72H0A..', 'responsable_conformite'),
+    ('BGFT', 'agent@bgft.cm', '$2b$10$26D4XvEV2csfjBd6tnmcQuP/yHdtKEvW6.evoWwbp9R4BuUDJc4AS', 'agent'),
+    ('BGFT', 'chargeur@bgft.cm', '$2b$10$wGZIUw4ZpoSwYGPb.ZKMVu0uGihD0Uv4oohgCD8IvMmhjxWNtVvu.', 'chargeur')
+ON CONFLICT (email) DO NOTHING;
