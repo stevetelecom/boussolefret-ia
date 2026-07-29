@@ -3,6 +3,7 @@ package history
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -10,14 +11,14 @@ import (
 // Entry représente une question posée et sa réponse, telles que persistées
 // pour l'audit (EF-RAG-04) et pour alimenter le dashboard "Dernières questions".
 type Entry struct {
-	ID             int64    `json:"id"`
-	Question       string   `json:"question"`
-	Answer         string   `json:"answer"`
-	Sources        []string `json:"sources"`
-	BestSimilarity *float64 `json:"best_similarity,omitempty"`
-	Abstained      bool     `json:"abstained"`
-	UserEmail      string   `json:"user_email"`
-	CreatedAt      string   `json:"created_at"`
+	ID             int64     `json:"id"`
+	Question       string    `json:"question"`
+	Answer         string    `json:"answer"`
+	Sources        []string  `json:"sources"`
+	BestSimilarity *float64  `json:"best_similarity,omitempty"`
+	Abstained      bool      `json:"abstained"`
+	UserEmail      string    `json:"user_email"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Repository encapsule tous les accès SQL à qa_history. Requêtes 100%
