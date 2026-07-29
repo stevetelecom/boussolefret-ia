@@ -104,7 +104,8 @@ import { AuthService } from '../../core/auth.service';
       .content { min-width: 0; }
       @media (max-width: 900px) {
         .shell { grid-template-columns: 1fr; }
-        .sidebar { order: 2; }
+        /* Pas de "order" ici : on garde l'ordre naturel du DOM (sidebar
+           puis contenu) pour éviter l'inversion visuelle en mobile. */
       }
     `,
   ],

@@ -31,7 +31,7 @@ interface DocSummary {
         <header class="hero card">
           <div>
             <p class="eyebrow">Conseil de conformité</p>
-            <h2>Bonjour, agent conformité</h2>
+            <h2>Bonjour</h2>
             <p>Posez vos questions réglementaires, consultez les sources et identifiez les documents atypiques.</p>
           </div>
           <div class="hero__actions">
@@ -50,11 +50,11 @@ interface DocSummary {
 
         <div class="stats-grid">
           <article class="card stat-card">
-            <strong>{{ questionsToday }}</strong>
+            <strong>{{ historyRestricted ? '—' : questionsToday }}</strong>
             <span>Questions aujourd'hui</span>
           </article>
           <article class="card stat-card">
-            <strong>{{ sourcedPct }}%</strong>
+            <strong>{{ historyRestricted ? '—' : sourcedPct + '%' }}</strong>
             <span>Réponses avec source</span>
           </article>
           <article class="card stat-card">
@@ -69,14 +69,19 @@ interface DocSummary {
               <h3>Dernières questions</h3>
               <a routerLink="/ask">Tout voir</a>
             </div>
-            <ul *ngIf="recentQuestions.length; else noHistory">
-              <li *ngFor="let q of recentQuestions">
-                <strong>{{ q.question }}</strong>
-                <span>{{ q.abstained ? 'Abstention · aucune source fiable' : ('Réponse citée · ' + q.sources.length + ' document(s)') }}</span>
-              </li>
-            </ul>
-            <ng-template #noHistory>
-              <p class="empty-state">Aucune question posée pour le moment.</p>
+            <p class="empty-state" *ngIf="historyRestricted; else historyBlock">
+              Réservé aux rôles Responsable conformité et Administrateur corpus.
+            </p>
+            <ng-template #historyBlock>
+              <ul *ngIf="recentQuestions.length; else noHistory">
+                <li *ngFor="let q of recentQuestions">
+                  <strong>{{ q.question }}</strong>
+                  <span>{{ q.abstained ? 'Abstention · aucune source fiable' : ('Réponse citée · ' + q.sources.length + ' document(s)') }}</span>
+                </li>
+              </ul>
+              <ng-template #noHistory>
+                <p class="empty-state">Aucune question posée pour le moment.</p>
+              </ng-template>
             </ng-template>
           </section>
 
@@ -140,27 +145,43 @@ interface DocSummary {
 })
 export class DashboardPageComponent implements OnInit {
   loadError = '';
+  historyRestricted = false;
   history: HistoryEntry[] = [];
   documents: DocSummary[] = [];
 
   constructor(private readonly auth: AuthService) {}
 
   async ngOnInit(): Promise<void> {
-    try {
-      const [historyRes, docsRes] = await Promise.all([
-        this.auth.authFetch('/history?limit=50'),
-        this.auth.authFetch('/documents'),
-      ]);
-      if (!historyRes.ok || !docsRes.ok) {
-        this.loadError = 'Impossible de charger les données du dashboard.';
-        return;
+    // Promise.allSettled plutôt que Promise.all : un rôle Agent/Chargeur reçoit
+    // légitimement un 403 sur /history (route réservée conformité/admin), ce
+    // n'est pas une panne — le reste du dashboard doit continuer à s'afficher.
+    const [historyResult, docsResult] = await Promise.allSettled([
+      this.auth.authFetch('/history?limit=50'),
+      this.auth.authFetch('/documents'),
+    ]);
+
+    if (docsResult.status === 'fulfilled' && docsResult.value.ok) {
+      try {
+        this.documents = await docsResult.value.json();
+      } catch (e) {
+        console.error(e);
+        this.loadError = 'Réponse documents invalide.';
       }
-      this.history = await historyRes.json();
-      this.documents = await docsRes.json();
-      this.loadError = '';
-    } catch (e) {
-      console.error(e);
-      this.loadError = 'Erreur réseau lors du chargement du dashboard.';
+    } else {
+      this.loadError = 'Impossible de charger les documents.';
+    }
+
+    if (historyResult.status === 'fulfilled' && historyResult.value.ok) {
+      try {
+        this.history = await historyResult.value.json();
+      } catch (e) {
+        console.error(e);
+      }
+    } else if (historyResult.status === 'fulfilled' && historyResult.value.status === 403) {
+      // Rôle sans accès à l'historique : dégradation attendue, pas une erreur.
+      this.historyRestricted = true;
+    } else {
+      this.loadError = this.loadError || "Impossible de charger l'historique des questions.";
     }
   }
 
