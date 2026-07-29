@@ -1,11 +1,12 @@
 import { Component } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
+import { UserAvatarMenuComponent } from './user-avatar-menu.component';
 
 @Component({
   selector: 'app-layout-shell',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive],
+  imports: [RouterLink, RouterLinkActive, UserAvatarMenuComponent],
   template: `
     <div class="shell">
       <aside class="sidebar card">
@@ -30,15 +31,18 @@ import { AuthService } from '../../core/auth.service';
             <span class="material-icons-outlined">folder</span>
             Documents & anomalies
           </a>
-            <a (click)="logout()" style="cursor:pointer">
-              <span class="material-icons-outlined">logout</span>
-              Déconnexion
-            </a>
+          <a (click)="logout()" style="cursor:pointer">
+            <span class="material-icons-outlined">logout</span>
+            Déconnexion
+          </a>
         </nav>
 
-        <div class="sidebar__footer">
-          <p>Phase 1 · MVP</p>
-          <strong>Réponses sourcées</strong>
+        <div class="sidebar__bottom">
+          <div class="sidebar__footer">
+            <p>Phase 1 · MVP</p>
+            <strong>Réponses sourcées</strong>
+          </div>
+          <app-user-avatar-menu />
         </div>
       </aside>
 
@@ -81,7 +85,7 @@ import { AuthService } from '../../core/auth.service';
       }
       .brand h1 { margin: 0; font-size: 1rem; }
       .brand p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.9rem; }
-      .nav-links { display: flex; flex-direction: column; gap: 0.6rem; }
+      .nav-links { display: flex; flex-direction: column; gap: 0.6rem; flex: 1; }
       .nav-links a {
         padding: 0.85rem 0.95rem;
         border-radius: 14px;
@@ -95,8 +99,8 @@ import { AuthService } from '../../core/auth.service';
         background: rgba(61, 215, 198, 0.16);
         color: var(--text);
       }
+      .sidebar__bottom { display: flex; flex-direction: column; gap: 1rem; }
       .sidebar__footer {
-        margin-top: 1rem;
         padding-top: 1rem;
         border-top: 1px solid var(--border);
         color: var(--muted);
@@ -110,10 +114,10 @@ import { AuthService } from '../../core/auth.service';
     `,
   ],
 })
-  export class LayoutShellComponent {
-    constructor(private readonly router: Router, private readonly auth: AuthService) {}
-    logout() {
-      this.auth.logout();
-      this.router.navigate(['/login']);
-    }
+export class LayoutShellComponent {
+  constructor(private readonly router: Router, private readonly auth: AuthService) {}
+  logout() {
+    this.auth.logout();
+    this.router.navigate(['/login']);
   }
+}
