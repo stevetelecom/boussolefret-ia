@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -23,12 +24,15 @@ import (
 	"github.com/flysoft/boussolefret-ia/go-api/internal/users"
 )
 
+var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
 const tenantDefault = "BGFT"
 const topKChunks = 5
 const chunkMaxRunes = 1500
 const chunkOverlap = 200
 const maxIngestBytes = 2_000_000
 const historyDefaultLimit = 20
+const authTokenTTL = 24 * time.Hour
 
 func main() {
 	cfg := config.Load()
@@ -97,17 +101,7 @@ func main() {
 			return
 		}
 
-		claims := authmw.Claims{
-			Role:     user.Role,
-			TenantID: user.TenantID,
-			RegisteredClaims: jwt.RegisteredClaims{
-				Subject:   req.Email,
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-				IssuedAt:  jwt.NewNumericDate(time.Now()),
-			},
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		signed, err := token.SignedString([]byte(cfg.JWTSecret))
+		signed, err := authmw.IssueToken(cfg.JWTSecret, user.Email, user.Role, user.TenantID, authTokenTTL)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de génération du jeton"})
 			return
@@ -361,6 +355,136 @@ func main() {
 			return
 		}
 		c.JSON(http.StatusOK, entries)
+	})
+
+	// Profil du compte connecté (n'importe quel rôle authentifié peut
+	// consulter/modifier SON PROPRE profil — ce n'est pas une route
+	// d'administration des comptes tiers).
+	protected.GET("/me", func(c *gin.Context) {
+		user, err := usersRepo.FindByEmail(c.Request.Context(), authmw.CurrentUser(c))
+		if errors.Is(err, users.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "utilisateur introuvable"})
+			return
+		}
+		if err != nil {
+			log.Printf("erreur lecture profil: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"id":        user.ID,
+			"email":     user.Email,
+			"full_name": user.FullName,
+			"phone":     user.Phone,
+			"role":      user.Role,
+			"tenant_id": user.TenantID,
+		})
+	})
+
+	protected.PUT("/me", func(c *gin.Context) {
+		var req struct {
+			FullName string `json:"full_name"`
+			Email    string `json:"email"`
+			Phone    string `json:"phone"`
+		}
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
+			return
+		}
+		fullName := strings.TrimSpace(req.FullName)
+		newEmail := strings.TrimSpace(strings.ToLower(req.Email))
+		phone := strings.TrimSpace(req.Phone)
+		if fullName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "le nom complet est obligatoire"})
+			return
+		}
+		if !emailPattern.MatchString(newEmail) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email invalide"})
+			return
+		}
+
+		currentEmail := authmw.CurrentUser(c)
+		updated, err := usersRepo.UpdateProfile(c.Request.Context(), currentEmail, fullName, newEmail, phone)
+		if errors.Is(err, users.ErrEmailTaken) {
+			c.JSON(http.StatusConflict, gin.H{"error": "cet email est déjà utilisé"})
+			return
+		}
+		if errors.Is(err, users.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "utilisateur introuvable"})
+			return
+		}
+		if err != nil {
+			log.Printf("erreur mise à jour profil: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+
+		resp := gin.H{
+			"id":        updated.ID,
+			"email":     updated.Email,
+			"full_name": updated.FullName,
+			"phone":     updated.Phone,
+			"role":      updated.Role,
+			"tenant_id": updated.TenantID,
+		}
+		if newEmail != currentEmail {
+			// Le JWT porte l'email en Subject : s'il change, l'ancien jeton
+			// référence un compte qui n'existe plus sous ce nom — on en
+			// réémet un immédiatement pour ne pas déconnecter l'utilisateur.
+			newToken, err := authmw.IssueToken(cfg.JWTSecret, updated.Email, updated.Role, updated.TenantID, authTokenTTL)
+			if err != nil {
+				log.Printf("erreur réémission jeton après changement email: %v", err)
+			} else {
+				resp["token"] = newToken
+			}
+		}
+		c.JSON(http.StatusOK, resp)
+	})
+
+	protected.PUT("/me/password", func(c *gin.Context) {
+		var req struct {
+			CurrentPassword string `json:"current_password"`
+			NewPassword     string `json:"new_password"`
+		}
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
+			return
+		}
+		if len(req.NewPassword) < 8 {
+			// Revalidé côté serveur : ne jamais faire confiance à la seule
+			// validation du formulaire Angular.
+			c.JSON(http.StatusBadRequest, gin.H{"error": "le nouveau mot de passe doit contenir au moins 8 caractères"})
+			return
+		}
+
+		email := authmw.CurrentUser(c)
+		user, err := usersRepo.FindByEmail(c.Request.Context(), email)
+		if errors.Is(err, users.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "utilisateur introuvable"})
+			return
+		}
+		if err != nil {
+			log.Printf("erreur lecture utilisateur (changement mdp): %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)) != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "mot de passe actuel incorrect"})
+			return
+		}
+
+		newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+		if err != nil {
+			log.Printf("erreur hachage nouveau mot de passe: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		if err := usersRepo.UpdatePassword(c.Request.Context(), email, string(newHash)); err != nil {
+			log.Printf("erreur mise à jour mot de passe: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
 	log.Printf("go-api démarre sur le port %s", cfg.Port)

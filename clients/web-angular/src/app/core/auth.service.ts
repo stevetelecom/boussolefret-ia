@@ -43,6 +43,15 @@ export class AuthService {
     localStorage.removeItem(this.storageKey);
   }
 
+  /**
+   * Remplace le jeton stocké sans repasser par /auth/login. Utilisé quand le
+   * backend réémet un jeton suite à une action authentifiée (ex: changement
+   * d'email dans le profil, qui invalide le Subject du jeton précédent).
+   */
+  setToken(token: string): void {
+    localStorage.setItem(this.storageKey, token);
+  }
+
   isAuthenticated(): boolean {
     return !!localStorage.getItem(this.storageKey);
   }
