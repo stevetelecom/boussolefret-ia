@@ -59,6 +59,19 @@ services:
       - "4222:4222"   # client
       - "8222:8222"   # monitoring
 
+  # --- IA locale et gratuite : sert les embeddings et le chat via une API
+  # compatible OpenAI (/v1/embeddings, /v1/chat/completions), consommée par
+  # internal/llm sans changer une ligne de code Go. Remplaçable plus tard par
+  # un vrai fournisseur payant en changeant juste LLM_API_URL/LLM_API_KEY.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bf_ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+
   go-api:
     build:
       context: ./services/go-api
@@ -79,6 +92,8 @@ services:
         condition: service_started
       nats:
         condition: service_started
+      ollama:
+        condition: service_started
     ports:
       - "8080:8080"
     volumes:
@@ -87,3 +102,4 @@ services:
 volumes:
   pg_data:
   minio_data:
+  ollama_data:

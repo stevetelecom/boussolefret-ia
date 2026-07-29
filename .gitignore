@@ -21,3 +21,7 @@ clients/desktop-flutter/.dart_tool/
 .DS_Store
 .vscode/
 .idea/
+
+# Build logs
+build.log
+*.log
