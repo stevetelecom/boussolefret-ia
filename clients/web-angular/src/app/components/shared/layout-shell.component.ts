@@ -1,12 +1,13 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
-import { UserAvatarMenuComponent } from './user-avatar-menu.component';
+import { LangService } from '../../core/lang.service';
+import { TopNavbarComponent } from './top-navbar.component';
 
 @Component({
   selector: 'app-layout-shell',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, UserAvatarMenuComponent],
+  imports: [RouterLink, RouterLinkActive, TopNavbarComponent],
   template: `
     <div class="shell">
       <aside class="sidebar card">
@@ -14,41 +15,44 @@ import { UserAvatarMenuComponent } from './user-avatar-menu.component';
           <div class="brand__mark">BF</div>
           <div>
             <h1>BoussoleFret IA</h1>
-            <p>Assistant conformité</p>
+            <p>{{ lang.t('brand.tagline') }}</p>
           </div>
         </div>
 
         <nav class="nav-links" aria-label="Navigation principale">
           <a routerLink="/dashboard" routerLinkActive="active">
             <span class="material-icons-outlined">dashboard</span>
-            Tableau de bord
+            {{ lang.t('nav.dashboard') }}
           </a>
           <a routerLink="/ask" routerLinkActive="active">
             <span class="material-icons-outlined">question_answer</span>
-            Ask (RAG)
+            {{ lang.t('nav.ask') }}
           </a>
           <a routerLink="/documents" routerLinkActive="active">
             <span class="material-icons-outlined">folder</span>
-            Documents & anomalies
+            {{ lang.t('nav.documents') }}
           </a>
           <a (click)="logout()" style="cursor:pointer">
             <span class="material-icons-outlined">logout</span>
-            Déconnexion
+            {{ lang.t('nav.logout') }}
           </a>
         </nav>
 
-        <div class="sidebar__bottom">
-          <div class="sidebar__footer">
-            <p>Phase 1 · MVP</p>
-            <strong>Réponses sourcées</strong>
-          </div>
-          <app-user-avatar-menu />
+        <!-- Avatar déplacé dans la top navbar (cf. top-navbar.component.ts) ;
+             la sidebar ne garde que le rappel de phase, pas d'action utilisateur. -->
+        <div class="sidebar__footer">
+          <p>{{ lang.t('brand.phase') }}</p>
+          <strong>{{ lang.t('brand.sourced') }}</strong>
         </div>
       </aside>
 
-      <main class="content">
-        <ng-content />
-      </main>
+      <div class="main-col">
+        <app-top-navbar />
+
+        <main class="content">
+          <ng-content />
+        </main>
+      </div>
     </div>
   `,
   styles: [
@@ -99,12 +103,12 @@ import { UserAvatarMenuComponent } from './user-avatar-menu.component';
         background: rgba(61, 215, 198, 0.16);
         color: var(--text);
       }
-      .sidebar__bottom { display: flex; flex-direction: column; gap: 1rem; }
       .sidebar__footer {
         padding-top: 1rem;
         border-top: 1px solid var(--border);
         color: var(--muted);
       }
+      .main-col { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
       .content { min-width: 0; }
       @media (max-width: 900px) {
         .shell { grid-template-columns: 1fr; }
@@ -115,6 +119,7 @@ import { UserAvatarMenuComponent } from './user-avatar-menu.component';
   ],
 })
 export class LayoutShellComponent {
+  readonly lang = inject(LangService);
   constructor(private readonly router: Router, private readonly auth: AuthService) {}
   logout() {
     this.auth.logout();
