@@ -17,6 +17,7 @@ import (
 	"github.com/flysoft/boussolefret-ia/go-api/internal/corpus"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/db"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/documents"
+	"github.com/flysoft/boussolefret-ia/go-api/internal/history"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/llm"
 )
 
@@ -25,6 +26,7 @@ const topKChunks = 5
 const chunkMaxRunes = 1500
 const chunkOverlap = 200
 const maxIngestBytes = 2_000_000
+const historyDefaultLimit = 20
 
 func main() {
 	cfg := config.Load()
@@ -37,6 +39,7 @@ func main() {
 
 	docRepo := documents.NewRepository(pool)
 	corpusRepo := corpus.NewRepository(pool)
+	historyRepo := history.NewRepository(pool)
 	embeddingsClient := llm.NewEmbeddingsClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.EmbeddingsModel)
 	chatClient := llm.NewChatClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.ChatModel)
 
@@ -275,8 +278,16 @@ func main() {
 		}
 
 		if len(chunks) == 0 || chunks[0].Similarity < cfg.SimilarityMin {
+			abstainAnswer := "Je ne dispose pas d'une source suffisamment fiable dans le corpus pour répondre à cette question. Merci de contacter le responsable conformité."
+			var bestSim *float64
+			if len(chunks) > 0 {
+				bestSim = &chunks[0].Similarity
+			}
+			if err := historyRepo.Save(ctx, tenantDefault, authmw.CurrentUser(c), question, abstainAnswer, []string{}, bestSim, true); err != nil {
+				log.Printf("erreur sauvegarde historique (abstention): %v", err)
+			}
 			c.JSON(http.StatusOK, gin.H{
-				"answer":  "Je ne dispose pas d'une source suffisamment fiable dans le corpus pour répondre à cette question. Merci de contacter le responsable conformité.",
+				"answer":  abstainAnswer,
 				"sources": []string{},
 			})
 			return
@@ -300,7 +311,28 @@ func main() {
 			return
 		}
 
+		bestSim := chunks[0].Similarity
+		if err := historyRepo.Save(ctx, tenantDefault, authmw.CurrentUser(c), question, answer, sources, &bestSim, false); err != nil {
+			log.Printf("erreur sauvegarde historique: %v", err)
+		}
+
 		c.JSON(http.StatusOK, gin.H{"answer": answer, "sources": sources})
+	})
+
+	protected.GET("/history", func(c *gin.Context) {
+		limit := historyDefaultLimit
+		if raw := c.Query("limit"); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 100 {
+				limit = parsed
+			}
+		}
+		entries, err := historyRepo.ListRecent(c.Request.Context(), tenantDefault, limit)
+		if err != nil {
+			log.Printf("erreur liste historique: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		c.JSON(http.StatusOK, entries)
 	})
 
 	log.Printf("go-api démarre sur le port %s", cfg.Port)

@@ -34,3 +34,21 @@ INSERT INTO documents (name, status) VALUES
 -- alimenter document_chunks (remplace le commentaire précédent laissé en placeholder).
 CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding
     ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- Historique des questions/réponses (EF-RAG-04, priorité Must). Alimente le
+-- dashboard "Dernières questions" et permet l'audit des réponses fournies.
+CREATE TABLE IF NOT EXISTS qa_history (
+    id              BIGSERIAL PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    user_email      TEXT NOT NULL,
+    question        TEXT NOT NULL,
+    answer          TEXT NOT NULL,
+    sources         TEXT[] NOT NULL DEFAULT '{}',
+    best_similarity DOUBLE PRECISION,
+    abstained       BOOLEAN NOT NULL DEFAULT false,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_qa_history_tenant_created
+    ON qa_history (tenant_id, created_at DESC);
+
