@@ -1,5 +1,7 @@
 FROM golang:1-alpine AS builder
 WORKDIR /app
+ENV GOFLAGS=-mod=mod
+ENV GOSUMDB=off
 COPY go.mod ./
 COPY . .
 RUN go mod tidy

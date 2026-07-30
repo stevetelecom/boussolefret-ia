@@ -71,7 +71,13 @@ export class AuthService {
     const token = this.getToken();
     const headers = new Headers(options.headers || {});
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    // FormData (upload de fichier) : ne JAMAIS fixer Content-Type nous-mêmes,
+    // le navigateur doit générer le boundary multipart lui-même. Sinon
+    // l'upload échoue silencieusement côté backend (c.FormFile introuvable).
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    if (options.body && !isFormData && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
 
     const res = await fetch(`${this.apiBase}${path}`, { ...options, headers });
     if (res.status === 401) {

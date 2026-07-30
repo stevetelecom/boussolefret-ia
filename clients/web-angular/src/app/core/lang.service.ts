@@ -65,10 +65,6 @@ export class LangService {
     this.lang.set(value);
   }
 
-  setLang(value: Lang): void {
-    this.lang.set(value);
-  }
-
   t(key: string): string {
     return DICT[this.lang()][key] ?? key;
   }

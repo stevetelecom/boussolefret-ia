@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,6 +25,7 @@ import (
 	"github.com/flysoft/boussolefret-ia/go-api/internal/documents"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/history"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/llm"
+	"github.com/flysoft/boussolefret-ia/go-api/internal/storage"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/users"
 )
 
@@ -34,6 +39,22 @@ const maxIngestBytes = 2_000_000
 const historyDefaultLimit = 20
 const authTokenTTL = 24 * time.Hour
 
+// Fichiers de documents transport : mêmes garde-fous que n'importe quel
+// upload utilisateur — taille plafonnée et whitelist stricte d'extensions
+// (jamais de blacklist, toujours plus facile à contourner).
+const maxDocumentUploadBytes = 20 << 20 // 20 Mo
+
+var allowedDocumentExtensions = map[string]bool{
+	".pdf":  true,
+	".doc":  true,
+	".docx": true,
+	".xls":  true,
+	".xlsx": true,
+	".jpg":  true,
+	".jpeg": true,
+	".png":  true,
+}
+
 func main() {
 	cfg := config.Load()
 
@@ -43,6 +64,19 @@ func main() {
 	}
 	defer pool.Close()
 
+	minioClient, err := storage.NewClient(cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioBucket, cfg.MinioUseSSL)
+	if err != nil {
+		log.Fatalf("connexion MinIO impossible: %v", err)
+	}
+	{
+		initCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := minioClient.EnsureBucket(initCtx); err != nil {
+			cancel()
+			log.Fatalf("bucket MinIO indisponible: %v", err)
+		}
+		cancel()
+	}
+
 	docRepo := documents.NewRepository(pool)
 	corpusRepo := corpus.NewRepository(pool)
 	historyRepo := history.NewRepository(pool)
@@ -51,6 +85,7 @@ func main() {
 	chatClient := llm.NewChatClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.ChatModel)
 
 	router := gin.Default()
+	router.MaxMultipartMemory = 8 << 20 // 8 Mo gardés en mémoire ; au-delà, Gin bascule sur fichier temporaire disque
 	router.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -146,18 +181,47 @@ func main() {
 		c.JSON(http.StatusOK, docs)
 	})
 
+	// Création d'un document AVEC son fichier physique. multipart/form-data
+	// obligatoire (jamais JSON ici) : champs "name", "status", "file".
+	// Le fichier est streamé directement vers MinIO, jamais écrit sur le
+	// disque local du conteneur go-api.
 	conformite.POST("/documents", func(c *gin.Context) {
-		var d documents.Document
-		if err := c.BindJSON(&d); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
+		name := strings.TrimSpace(c.PostForm("name"))
+		status := c.PostForm("status")
+
+		fileHeader, ferr := c.FormFile("file")
+		if ferr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "le fichier est obligatoire"})
 			return
 		}
+		if name == "" {
+			name = fileHeader.Filename
+		}
+
+		d := documents.Document{Name: name, Status: status}
 		if err := d.Validate(); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		created, err := docRepo.Create(c.Request.Context(), d)
+
+		objectKey, contentType, err := uploadDocumentFile(c.Request.Context(), minioClient, fileHeader)
 		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		d.FileName = fileHeader.Filename
+		d.FileSize = fileHeader.Size
+		d.ContentType = contentType
+		d.StorageKey = objectKey
+
+		created, err := docRepo.Create(c.Request.Context(), d, authmw.CurrentUser(c))
+		if err != nil {
+			// La ligne BD n'a pas pu être créée : on ne laisse pas un fichier
+			// orphelin dans MinIO derrière nous.
+			if delErr := minioClient.Delete(c.Request.Context(), objectKey); delErr != nil {
+				log.Printf("erreur nettoyage MinIO après échec création document: %v", delErr)
+			}
 			log.Printf("erreur création document: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
 			return
@@ -165,30 +229,78 @@ func main() {
 		c.JSON(http.StatusCreated, created)
 	})
 
+	// Mise à jour d'un document. Le fichier ("file") est optionnel : si
+	// absent, on garde le fichier déjà associé ; s'il est présent, il
+	// remplace l'ancien (l'ancien objet MinIO est supprimé après succès).
 	conformite.PUT("/documents/:id", func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
 			return
 		}
-		var d documents.Document
-		if err := c.BindJSON(&d); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "payload invalide"})
-			return
-		}
-		if err := d.Validate(); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		updated, err := docRepo.Update(c.Request.Context(), id, d)
+
+		existing, err := docRepo.Get(c.Request.Context(), id)
 		if errors.Is(err, documents.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "document introuvable"})
 			return
 		}
 		if err != nil {
+			log.Printf("erreur lecture document avant mise à jour: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+
+		name := strings.TrimSpace(c.PostForm("name"))
+		status := c.PostForm("status")
+		d := documents.Document{
+			Name:        name,
+			Status:      status,
+			FileName:    existing.FileName,
+			FileSize:    existing.FileSize,
+			ContentType: existing.ContentType,
+			StorageKey:  existing.StorageKey,
+		}
+		if err := d.Validate(); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		replacingFile := false
+		oldStorageKey := existing.StorageKey
+		if fileHeader, ferr := c.FormFile("file"); ferr == nil {
+			objectKey, contentType, err := uploadDocumentFile(c.Request.Context(), minioClient, fileHeader)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			d.FileName = fileHeader.Filename
+			d.FileSize = fileHeader.Size
+			d.ContentType = contentType
+			d.StorageKey = objectKey
+			replacingFile = true
+		}
+
+		updated, err := docRepo.Update(c.Request.Context(), id, d)
+		if errors.Is(err, documents.ErrNotFound) {
+			if replacingFile {
+				_ = minioClient.Delete(c.Request.Context(), d.StorageKey)
+			}
+			c.JSON(http.StatusNotFound, gin.H{"error": "document introuvable"})
+			return
+		}
+		if err != nil {
+			if replacingFile {
+				_ = minioClient.Delete(c.Request.Context(), d.StorageKey)
+			}
 			log.Printf("erreur mise à jour document: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
 			return
+		}
+
+		if replacingFile && oldStorageKey != "" {
+			if err := minioClient.Delete(c.Request.Context(), oldStorageKey); err != nil {
+				log.Printf("erreur suppression ancien fichier MinIO (document %d): %v", id, err)
+			}
 		}
 		c.JSON(http.StatusOK, updated)
 	})
@@ -199,7 +311,7 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
 			return
 		}
-		err = docRepo.Delete(c.Request.Context(), id)
+		storageKey, err := docRepo.Delete(c.Request.Context(), id)
 		if errors.Is(err, documents.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "document introuvable"})
 			return
@@ -209,7 +321,48 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
 			return
 		}
+		if storageKey != "" {
+			if err := minioClient.Delete(c.Request.Context(), storageKey); err != nil {
+				// La ligne BD est déjà supprimée : on log sans bloquer la
+				// réponse. Un fichier orphelin en cas d'incident MinIO est un
+				// moindre mal comparé à une suppression bloquée pour l'utilisateur.
+				log.Printf("erreur suppression fichier MinIO (document %d, clé %s): %v", id, storageKey, err)
+			}
+		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	// Lien de téléchargement présigné. Le fichier n'est JAMAIS servi
+	// directement par go-api ni exposé publiquement sur MinIO : cette route
+	// passe par le RBAC standard (n'importe quel rôle authentifié, comme la
+	// lecture de /documents) avant de générer un lien à courte durée de vie.
+	protected.GET("/documents/:id/download", func(c *gin.Context) {
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
+			return
+		}
+		doc, err := docRepo.Get(c.Request.Context(), id)
+		if errors.Is(err, documents.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "document introuvable"})
+			return
+		}
+		if err != nil {
+			log.Printf("erreur lecture document (téléchargement): %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		if doc.StorageKey == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "aucun fichier associé à ce document"})
+			return
+		}
+		url, err := minioClient.PresignedDownloadURL(c.Request.Context(), doc.StorageKey, doc.FileName)
+		if err != nil {
+			log.Printf("erreur génération lien de téléchargement (document %d): %v", id, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"url": url})
 	})
 
 	corpusAdmin.GET("/corpus", func(c *gin.Context) {
@@ -238,13 +391,12 @@ func main() {
 			return
 		}
 		if len(content) > maxIngestBytes {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "document trop volumineux"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "contenu trop volumineux"})
 			return
 		}
 
 		ctx := c.Request.Context()
 		chunks := corpus.SplitIntoChunks(content, chunkMaxRunes, chunkOverlap)
-
 		inserted := 0
 		for _, chunk := range chunks {
 			embedding, err := embeddingsClient.Embed(ctx, chunk)
@@ -491,4 +643,55 @@ func main() {
 	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// uploadDocumentFile valide (taille, extension whitelist) puis envoie un
+// fichier reçu en multipart vers MinIO sous une clé générée côté serveur.
+// Centralisé ici car utilisé identiquement par la création et le
+// remplacement de fichier d'un document.
+func uploadDocumentFile(ctx context.Context, minioClient *storage.Client, fileHeader *multipart.FileHeader) (objectKey string, contentType string, err error) {
+	if fileHeader.Size > maxDocumentUploadBytes {
+		return "", "", errors.New("fichier trop volumineux (20 Mo maximum)")
+	}
+
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+	if !allowedDocumentExtensions[ext] {
+		return "", "", errors.New("type de fichier non autorisé (formats acceptés : pdf, doc, docx, xls, xlsx, jpg, png)")
+	}
+
+	objectKey, err = newObjectKey(ext)
+	if err != nil {
+		return "", "", errors.New("erreur interne lors de la préparation du fichier")
+	}
+
+	src, err := fileHeader.Open()
+	if err != nil {
+		return "", "", errors.New("lecture du fichier envoyé impossible")
+	}
+	defer src.Close()
+
+	contentType = fileHeader.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	if err := minioClient.Upload(ctx, objectKey, src, fileHeader.Size, contentType); err != nil {
+		log.Printf("erreur upload MinIO (%s): %v", fileHeader.Filename, err)
+		return "", "", errors.New("échec de l'envoi du fichier vers le stockage")
+	}
+
+	return objectKey, contentType, nil
+}
+
+// newObjectKey génère une clé d'objet MinIO aléatoire et imprévisible
+// (16 octets issus de crypto/rand), jamais dérivée du nom de fichier fourni
+// par le client — élimine tout risque de traversée de chemin ou de collision
+// avec un objet existant. Préfixée par le tenant pour préparer l'isolation
+// multi-bureau prévue en Phase 3 (2ᵉ bureau BNFT).
+func newObjectKey(ext string) (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return tenantDefault + "/" + hex.EncodeToString(buf) + ext, nil
 }

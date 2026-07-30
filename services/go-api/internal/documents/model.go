@@ -25,11 +25,20 @@ func (s Status) Valid() bool {
 	}
 }
 
-// Document est l'entité métier persistée en base.
+// Document est l'entité métier persistée en base. Les champs FileName/
+// FileSize/ContentType sont des métadonnées d'affichage ; StorageKey est la
+// clé de l'objet dans MinIO et n'est JAMAIS exposée au client (json:"-") —
+// exposer cette clé permettrait de contourner le contrôle RBAC fait avant
+// génération d'un lien de téléchargement présigné.
 type Document struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	FileName    string `json:"file_name,omitempty"`
+	FileSize    int64  `json:"file_size,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	HasFile     bool   `json:"has_file"`
+	StorageKey  string `json:"-"`
 }
 
 // Validate applique les règles de validation d'entrée: on ne fait jamais

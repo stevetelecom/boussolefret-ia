@@ -24,6 +24,19 @@ CREATE TABLE IF NOT EXISTS documents (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Upload réel de fichier (MinIO) : ajouté après coup, en ALTER TABLE
+-- idempotent plutôt qu'en modifiant la définition ci-dessus — permet
+-- d'appliquer cette migration sur une base déjà initialisée sans perte de
+-- données. storage_key = clé de l'objet dans MinIO, jamais exposée au
+-- client (voir documents.Document.StorageKey côté Go). uploaded_by = email
+-- de l'auteur, pour audit (traçabilité demandée par le CDC, gouvernance du
+-- corpus).
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_name    TEXT NOT NULL DEFAULT '';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_size    BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_key  TEXT NOT NULL DEFAULT '';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS uploaded_by  TEXT NOT NULL DEFAULT '';
+
 -- Données de démonstration (reprend les 3 documents précédemment codés en dur dans go-api)
 INSERT INTO documents (name, status) VALUES
     ('LVO_2026.pdf', 'Validé'),

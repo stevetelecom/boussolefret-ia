@@ -17,6 +17,13 @@ type Config struct {
 	EmbeddingsModel string
 	ChatModel       string
 	SimilarityMin   float64 // seuil d'abstention EF-RAG-03
+
+	// Stockage objet (MinIO) pour les fichiers de documents transport.
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioBucket    string
+	MinioUseSSL    bool
 }
 
 func Load() Config {
@@ -29,6 +36,12 @@ func Load() Config {
 		EmbeddingsModel: getEnv("EMBEDDINGS_MODEL", "text-embedding-3-small"),
 		ChatModel:       getEnv("LLM_CHAT_MODEL", "gpt-4o-mini"),
 		SimilarityMin:   getEnvFloat("SIMILARITY_MIN", 0.72),
+
+		MinioEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinioAccessKey: mustGetEnv("MINIO_ACCESS_KEY"),
+		MinioSecretKey: mustGetEnv("MINIO_SECRET_KEY"),
+		MinioBucket:    getEnv("MINIO_BUCKET", "boussolefret-documents"),
+		MinioUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
 	}
 }
 
