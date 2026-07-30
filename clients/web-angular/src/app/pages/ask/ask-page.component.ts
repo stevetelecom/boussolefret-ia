@@ -1,8 +1,9 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { LayoutShellComponent } from '../../components/shared/layout-shell.component';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../core/auth.service';
+import { LangService } from '../../core/lang.service';
 
 interface ChatMsg { from: 'user'|'bot'; text: string }
 
@@ -15,9 +16,9 @@ interface ChatMsg { from: 'user'|'bot'; text: string }
       <section class="page animate-in">
         <header class="hero card">
           <div>
-            <p class="eyebrow">Assistant réglementaire</p>
-            <h2>Posez votre question</h2>
-            <p>Réponse sourcée (RAG) ou abstention explicite si le corpus ne couvre pas la question.</p>
+            <p class="eyebrow">{{ lang.t('ask.eyebrow') }}</p>
+            <h2>{{ lang.t('ask.title') }}</h2>
+            <p>{{ lang.t('ask.subtitle') }}</p>
           </div>
         </header>
 
@@ -28,8 +29,8 @@ interface ChatMsg { from: 'user'|'bot'; text: string }
             </div>
           </div>
           <form class="composer" (ngSubmit)="send()">
-            <input type="text" placeholder="Posez votre question..." [(ngModel)]="input" name="q" [disabled]="sending" />
-            <button class="btn primary" type="submit" [disabled]="sending">Envoyer</button>
+            <input type="text" [placeholder]="lang.t('ask.placeholder')" [(ngModel)]="input" name="q" [disabled]="sending" />
+            <button class="btn primary" type="submit" [disabled]="sending">{{ lang.t('ask.send') }}</button>
           </form>
         </section>
       </section>
@@ -51,7 +52,9 @@ interface ChatMsg { from: 'user'|'bot'; text: string }
   ],
 })
 export class AskPageComponent {
-  msgs: ChatMsg[] = [ { from: 'bot', text: 'Bonjour — comment puis-je vous aider ?' } ];
+  readonly lang = inject(LangService);
+
+  msgs: ChatMsg[] = [ { from: 'bot', text: this.lang.t('ask.greeting') } ];
   input = '';
   sending = false;
 
@@ -63,24 +66,24 @@ export class AskPageComponent {
     this.msgs.push({ from: 'user', text });
     this.input = '';
     this.sending = true;
-    const placeholderIndex = this.msgs.push({ from: 'bot', text: 'Recherche en cours...' }) - 1;
+    const placeholderIndex = this.msgs.push({ from: 'bot', text: this.lang.t('ask.searching') }) - 1;
 
     try {
       const res = await this.auth.authFetch('/ask', { method: 'POST', body: JSON.stringify({ question: text }) });
       if (!res.ok) {
-        this.msgs[placeholderIndex] = { from: 'bot', text: 'Erreur service IA (voir logs go-api).' };
+        this.msgs[placeholderIndex] = { from: 'bot', text: this.lang.t('ask.err_service') };
         return;
       }
       const data = await res.json();
       if (data.answer) {
-        const suffix = data.sources && data.sources.length ? ' · Sources: ' + data.sources.join(', ') : '';
+        const suffix = data.sources && data.sources.length ? this.lang.t('ask.sources_prefix') + data.sources.join(', ') : '';
         this.msgs[placeholderIndex] = { from: 'bot', text: data.answer + suffix };
       } else {
         this.msgs[placeholderIndex] = { from: 'bot', text: JSON.stringify(data) };
       }
     } catch (e) {
       console.error(e);
-      this.msgs[placeholderIndex] = { from: 'bot', text: 'Erreur réseau vers l\'API.' };
+      this.msgs[placeholderIndex] = { from: 'bot', text: this.lang.t('ask.err_network') };
     } finally {
       this.sending = false;
     }

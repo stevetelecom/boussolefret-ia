@@ -1,9 +1,10 @@
-import { AfterViewInit, Component, OnDestroy, OnInit } from '@angular/core';
+import { AfterViewInit, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { LayoutShellComponent } from '../../components/shared/layout-shell.component';
 import { ModalComponent } from '../../components/shared/modal.component';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../core/auth.service';
+import { LangService } from '../../core/lang.service';
 
 declare const $: any;
 
@@ -25,6 +26,12 @@ interface SourceSummary { source: string; chunks: number }
 const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.jpg', '.jpeg', '.png'];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à maxDocumentUploadBytes (main.go)
 
+// ⚠️ Les valeurs de statut ('Validé', 'À vérifier', 'À risque') sont des
+// DONNÉES métier échangées telles quelles avec l'API Go (voir statusClass()
+// et AlertsService, qui comparent ces chaînes en dur) — elles ne sont
+// volontairement PAS traduites : seuls les libellés d'interface autour
+// (colonne "Statut", etc.) passent par lang.t(...).
+
 @Component({
   selector: 'app-documents-page',
   standalone: true,
@@ -34,18 +41,18 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
       <section class="page animate-in">
         <header class="page-header card">
           <div>
-            <p class="eyebrow">Corpus &amp; détection d'anomalies</p>
-            <h2>Documents sources et signalement d'écarts</h2>
-            <p>Le portail centralise les documents de référence et met en évidence les fichiers atypiques à valider.</p>
+            <p class="eyebrow">{{ lang.t('documents.eyebrow') }}</p>
+            <h2>{{ lang.t('documents.title') }}</h2>
+            <p>{{ lang.t('documents.subtitle') }}</p>
           </div>
           <div class="header-actions">
             <button class="btn" (click)="openSources()">
               <span class="material-icons-outlined">source</span>
-              Voir les sources
+              {{ lang.t('dashboard.view_sources') }}
             </button>
             <button class="btn primary" (click)="openAdd()">
               <span class="material-icons-outlined">add</span>
-              Ajouter un document
+              {{ lang.t('documents.add') }}
             </button>
           </div>
         </header>
@@ -54,18 +61,18 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
 
         <section class="card panel">
           <div class="panel__header">
-            <h3>Documents en entrée</h3>
-            <span>{{ docs.length }} fichiers</span>
+            <h3>{{ lang.t('documents.incoming_docs') }}</h3>
+            <span>{{ docs.length }} {{ lang.t('documents.files_word') }}</span>
           </div>
 
           <table id="docs-table" class="display" style="width:100%">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Nom</th>
-                <th>Fichier</th>
-                <th>Statut</th>
-                <th>Actions</th>
+                <th>{{ lang.t('documents.col_id') }}</th>
+                <th>{{ lang.t('documents.col_name') }}</th>
+                <th>{{ lang.t('documents.col_file') }}</th>
+                <th>{{ lang.t('documents.col_status') }}</th>
+                <th>{{ lang.t('documents.col_actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -79,18 +86,18 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
                   </span>
                   <span class="file-chip file-chip--missing" *ngIf="!d.has_file">
                     <span class="material-icons-outlined">block</span>
-                    aucun fichier
+                    {{ lang.t('documents.no_file') }}
                   </span>
                 </td>
                 <td><span class="status-badge" [class]="statusClass(d.status)">{{d.status}}</span></td>
                 <td class="actions-cell">
-                  <button class="btn icon-only" (click)="download(d)" [disabled]="!d.has_file" aria-label="Télécharger">
+                  <button class="btn icon-only" (click)="download(d)" [disabled]="!d.has_file" [attr.aria-label]="lang.t('documents.download')">
                     <span class="material-icons-outlined">download</span>
                   </button>
-                  <button class="btn icon-only" (click)="openEdit(d)" aria-label="Modifier">
+                  <button class="btn icon-only" (click)="openEdit(d)" [attr.aria-label]="lang.t('documents.edit')">
                     <span class="material-icons-outlined">edit</span>
                   </button>
-                  <button class="btn icon-only danger" (click)="openDelete(d)" aria-label="Supprimer">
+                  <button class="btn icon-only danger" (click)="openDelete(d)" [attr.aria-label]="lang.t('documents.delete')">
                     <span class="material-icons-outlined">delete</span>
                   </button>
                 </td>
@@ -102,11 +109,11 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
         <app-modal [title]="modalTitle" [(show)]="showModal" (save)="onModalSave()" (close)="onModalClose()">
           <form class="modal-form">
             <label>
-              <span>Nom du document</span>
-              <input type="text" [(ngModel)]="form.name" name="docName" placeholder="ex: LVO_2026.pdf" />
+              <span>{{ lang.t('documents.form_name') }}</span>
+              <input type="text" [(ngModel)]="form.name" name="docName" [placeholder]="lang.t('documents.form_name_placeholder')" />
             </label>
             <label>
-              <span>Statut</span>
+              <span>{{ lang.t('documents.form_status') }}</span>
               <select [(ngModel)]="form.status" name="docStatus">
                 <option>Validé</option>
                 <option>À vérifier</option>
@@ -115,10 +122,10 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
             </label>
 
             <label>
-              <span>Fichier {{ editingId ? '(laisser vide pour conserver le fichier actuel)' : '' }}</span>
+              <span>{{ lang.t('documents.form_file_label') }} {{ editingId ? lang.t('documents.form_file_keep_hint') : '' }}</span>
               <div class="file-drop" [class.file-drop--filled]="!!selectedFile" (click)="fileInput.click()">
                 <span class="material-icons-outlined">{{ selectedFile ? 'task' : 'upload_file' }}</span>
-                <span *ngIf="!selectedFile">Cliquer pour choisir un fichier (PDF, Word, Excel, image — 20 Mo max)</span>
+                <span *ngIf="!selectedFile">{{ lang.t('documents.file_drop_hint') }}</span>
                 <span *ngIf="selectedFile">{{ selectedFile.name }} · {{ formatSize(selectedFile.size) }}</span>
               </div>
               <input #fileInput type="file" hidden
@@ -130,24 +137,23 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
           </form>
         </app-modal>
 
-        <app-modal title="Supprimer le document" [(show)]="showDeleteModal" (save)="confirmDelete()" (close)="showDeleteModal=false">
+        <app-modal [title]="lang.t('documents.delete_title')" [(show)]="showDeleteModal" (save)="confirmDelete()" (close)="showDeleteModal=false">
           <p>
-            Supprimer définitivement <strong>{{ docToDelete?.name }}</strong> ? Cette action est irréversible
-            {{ docToDelete?.has_file ? '(le fichier associé sera aussi supprimé du stockage)' : '' }}.
+            {{ lang.t('documents.delete_confirm', { name: docToDelete?.name || '' }) }}
+            {{ docToDelete?.has_file ? lang.t('documents.delete_file_note') : '' }}.
           </p>
         </app-modal>
 
-        <app-modal title="Sources indexées dans le corpus" [(show)]="showSourcesModal" (save)="showSourcesModal=false" (close)="showSourcesModal=false">
-          <div *ngIf="sourcesLoading">Chargement…</div>
+        <app-modal [title]="lang.t('documents.sources_title')" [(show)]="showSourcesModal" (save)="showSourcesModal=false" (close)="showSourcesModal=false">
+          <div *ngIf="sourcesLoading">{{ lang.t('common.loading') }}</div>
           <div *ngIf="!sourcesLoading && sources.length === 0" class="empty-state">
-            Aucun texte réglementaire indexé pour l'instant. Le corpus est vide, donc l'assistant Ask (RAG) répondra
-            systématiquement par une abstention (garde-fou EF-RAG-03).
+            {{ lang.t('documents.empty_corpus') }}
           </div>
           <ul class="sources-list" *ngIf="!sourcesLoading && sources.length > 0">
             <li *ngFor="let s of sources">
               <span class="material-icons-outlined">description</span>
               <span class="sources-list__name">{{ s.source }}</span>
-              <span class="sources-list__count">{{ s.chunks }} fragment(s)</span>
+              <span class="sources-list__count">{{ s.chunks }} {{ lang.t('documents.fragments_word') }}</span>
             </li>
           </ul>
         </app-modal>
@@ -196,6 +202,8 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
   ],
 })
 export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit {
+  readonly lang = inject(LangService);
+
   docs: Doc[] = [];
   loadError = '';
 
@@ -225,7 +233,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     try {
       const res = await this.auth.authFetch('/documents');
       if (!res.ok) {
-        this.loadError = 'Impossible de charger les documents.';
+        this.loadError = this.lang.t('documents.err_load');
         return;
       }
       this.loadError = '';
@@ -234,7 +242,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
       setTimeout(() => { this.rebuildTable(); }, 50);
     } catch (e) {
       console.error('loadDocs error', e);
-      this.loadError = 'Erreur réseau lors du chargement des documents.';
+      this.loadError = this.lang.t('documents.err_load_network');
     }
   }
 
@@ -271,7 +279,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
   }
 
   openAdd() {
-    this.modalTitle = 'Ajouter un document';
+    this.modalTitle = this.lang.t('documents.add');
     this.modalError = '';
     this.form = { name: '', status: 'À vérifier' };
     this.editingId = null;
@@ -280,7 +288,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
   }
 
   openEdit(d: Doc) {
-    this.modalTitle = 'Modifier le document';
+    this.modalTitle = this.lang.t('documents.edit_title');
     this.modalError = '';
     this.form = { name: d.name, status: d.status };
     this.editingId = d.id;
@@ -303,13 +311,13 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     }
     const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      this.modalError = 'Type de fichier non autorisé (pdf, doc, docx, xls, xlsx, jpg, png uniquement).';
+      this.modalError = this.lang.t('documents.err_file_type');
       input.value = '';
       this.selectedFile = null;
       return;
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      this.modalError = 'Fichier trop volumineux (20 Mo maximum).';
+      this.modalError = this.lang.t('documents.err_file_size');
       input.value = '';
       this.selectedFile = null;
       return;
@@ -322,7 +330,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     try {
       const res = await this.auth.authFetch(`/documents/${d.id}/download`);
       if (!res.ok) {
-        this.loadError = 'Impossible de générer le lien de téléchargement.';
+        this.loadError = this.lang.t('documents.err_download_link');
         return;
       }
       const data = await res.json();
@@ -331,7 +339,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
       }
     } catch (e) {
       console.error('download error', e);
-      this.loadError = 'Erreur réseau lors du téléchargement.';
+      this.loadError = this.lang.t('documents.err_download_network');
     }
   }
 
@@ -345,11 +353,11 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
         this.showDeleteModal = false;
         this.docToDelete = null;
       } else {
-        this.loadError = 'Impossible de supprimer ce document.';
+        this.loadError = this.lang.t('documents.err_delete');
       }
     } catch (e) {
       console.error(e);
-      this.loadError = 'Erreur réseau lors de la suppression.';
+      this.loadError = this.lang.t('documents.err_delete_network');
     }
   }
 
@@ -357,11 +365,11 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     const name = (this.form.name || '').trim();
     const status = this.form.status || '';
     if (!name) {
-      this.modalError = 'Le nom du document est obligatoire.';
+      this.modalError = this.lang.t('documents.err_name_required');
       return;
     }
     if (!this.editingId && !this.selectedFile) {
-      this.modalError = 'Un fichier est obligatoire pour ajouter un document.';
+      this.modalError = this.lang.t('documents.err_file_required');
       return;
     }
 
@@ -386,11 +394,11 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
         this.selectedFile = null;
       } else {
         const body = await res.json().catch(() => ({}));
-        this.modalError = body.error || 'Une erreur est survenue.';
+        this.modalError = body.error || this.lang.t('documents.err_generic');
       }
     } catch (e) {
       console.error(e);
-      this.modalError = 'Erreur réseau.';
+      this.modalError = this.lang.t('documents.err_network');
     }
   }
 

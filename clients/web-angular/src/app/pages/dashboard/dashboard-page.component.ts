@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { LayoutShellComponent } from '../../components/shared/layout-shell.component';
 import { AuthService } from '../../core/auth.service';
+import { LangService } from '../../core/lang.service';
 
 interface HistoryEntry {
   id: number;
@@ -30,18 +31,18 @@ interface DocSummary {
       <section class="page animate-in">
         <header class="hero card">
           <div>
-            <p class="eyebrow">Conseil de conformité</p>
-            <h2>Bonjour</h2>
-            <p>Posez vos questions réglementaires, consultez les sources et identifiez les documents atypiques.</p>
+            <p class="eyebrow">{{ lang.t('dashboard.eyebrow') }}</p>
+            <h2>{{ lang.t('dashboard.greeting') }}</h2>
+            <p>{{ lang.t('dashboard.subtitle') }}</p>
           </div>
           <div class="hero__actions">
             <button class="primary" routerLink="/ask">
               <span class="material-icons-outlined">add</span>
-              Nouvelle requête
+              {{ lang.t('dashboard.new_request') }}
             </button>
             <button class="secondary" routerLink="/documents">
               <span class="material-icons-outlined">source</span>
-              Voir les sources
+              {{ lang.t('dashboard.view_sources') }}
             </button>
           </div>
         </header>
@@ -51,48 +52,48 @@ interface DocSummary {
         <div class="stats-grid">
           <article class="card stat-card">
             <strong>{{ historyRestricted ? '—' : questionsToday }}</strong>
-            <span>Questions aujourd'hui</span>
+            <span>{{ lang.t('dashboard.stat_questions_today') }}</span>
           </article>
           <article class="card stat-card">
             <strong>{{ historyRestricted ? '—' : sourcedPct + '%' }}</strong>
-            <span>Réponses avec source</span>
+            <span>{{ lang.t('dashboard.stat_sourced_answers') }}</span>
           </article>
           <article class="card stat-card">
             <strong>{{ docsToReview }}</strong>
-            <span>Documents à reviewer</span>
+            <span>{{ lang.t('dashboard.stat_docs_to_review') }}</span>
           </article>
         </div>
 
         <div class="panel-grid">
           <section class="card panel">
             <div class="panel__header">
-              <h3>Dernières questions</h3>
-              <a routerLink="/ask">Tout voir</a>
+              <h3>{{ lang.t('dashboard.recent_questions') }}</h3>
+              <a routerLink="/ask">{{ lang.t('dashboard.view_all') }}</a>
             </div>
             <p class="empty-state" *ngIf="historyRestricted; else historyBlock">
-              Réservé aux rôles Responsable conformité et Administrateur corpus.
+              {{ lang.t('dashboard.history_restricted') }}
             </p>
             <ng-template #historyBlock>
               <ul *ngIf="recentQuestions.length; else noHistory">
                 <li *ngFor="let q of recentQuestions">
                   <strong>{{ q.question }}</strong>
-                  <span>{{ q.abstained ? 'Abstention · aucune source fiable' : ('Réponse citée · ' + q.sources.length + ' document(s)') }}</span>
+                  <span>{{ q.abstained ? lang.t('dashboard.abstained_label') : lang.t('dashboard.sourced_label', { count: q.sources.length }) }}</span>
                 </li>
               </ul>
               <ng-template #noHistory>
-                <p class="empty-state">Aucune question posée pour le moment.</p>
+                <p class="empty-state">{{ lang.t('dashboard.no_questions') }}</p>
               </ng-template>
             </ng-template>
           </section>
 
           <section class="card panel">
             <div class="panel__header">
-              <h3>Alertes documentaires</h3>
-              <a routerLink="/documents">Gérer</a>
+              <h3>{{ lang.t('dashboard.alerts_title') }}</h3>
+              <a routerLink="/documents">{{ lang.t('dashboard.manage') }}</a>
             </div>
             <div class="alert-box">
-              <p>Un document présente un écart significatif par rapport au corpus habituel.</p>
-              <button>Examiner</button>
+              <p>{{ lang.t('dashboard.alert_text') }}</p>
+              <button>{{ lang.t('dashboard.examine') }}</button>
             </div>
           </section>
         </div>
@@ -144,6 +145,8 @@ interface DocSummary {
   ],
 })
 export class DashboardPageComponent implements OnInit {
+  readonly lang = inject(LangService);
+
   loadError = '';
   historyRestricted = false;
   history: HistoryEntry[] = [];
@@ -165,10 +168,10 @@ export class DashboardPageComponent implements OnInit {
         this.documents = await docsResult.value.json();
       } catch (e) {
         console.error(e);
-        this.loadError = 'Réponse documents invalide.';
+        this.loadError = this.lang.t('dashboard.err_invalid_docs');
       }
     } else {
-      this.loadError = 'Impossible de charger les documents.';
+      this.loadError = this.lang.t('dashboard.err_load_docs');
     }
 
     if (historyResult.status === 'fulfilled' && historyResult.value.ok) {
@@ -181,7 +184,7 @@ export class DashboardPageComponent implements OnInit {
       // Rôle sans accès à l'historique : dégradation attendue, pas une erreur.
       this.historyRestricted = true;
     } else {
-      this.loadError = this.loadError || "Impossible de charger l'historique des questions.";
+      this.loadError = this.loadError || this.lang.t('dashboard.err_load_history');
     }
   }
 
