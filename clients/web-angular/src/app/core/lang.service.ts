@@ -117,6 +117,11 @@ const DICT: Record<Lang, Record<string, string>> = {
     'documents.err_download_network': 'Erreur réseau lors du téléchargement.',
     'documents.err_delete': 'Impossible de supprimer ce document.',
     'documents.err_delete_network': 'Erreur réseau lors de la suppression.',
+
+    'role.admin_corpus': 'Administrateur corpus',
+    'role.responsable_conformite': 'Responsable conformité',
+    'role.agent': 'Agent',
+    'role.chargeur': 'Chargeur',
   },
   en: {
     'brand.tagline': 'Compliance assistant',
@@ -219,6 +224,11 @@ const DICT: Record<Lang, Record<string, string>> = {
     'documents.err_download_network': 'Network error while downloading.',
     'documents.err_delete': 'Unable to delete this document.',
     'documents.err_delete_network': 'Network error while deleting.',
+
+    'role.admin_corpus': 'Corpus Administrator',
+    'role.responsable_conformite': 'Compliance Officer',
+    'role.agent': 'Agent',
+    'role.chargeur': 'Shipper',
   },
 };
 

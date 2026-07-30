@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
+import { LangService } from '../../core/lang.service';
 
 interface Profile {
   id: number;
@@ -12,11 +13,11 @@ interface Profile {
   tenant_id: string;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  admin_corpus: 'Administrateur corpus',
-  responsable_conformite: 'Responsable conformité',
-  agent: 'Agent',
-  chargeur: 'Chargeur',
+const ROLE_LABEL_KEYS: Record<string, string> = {
+  admin_corpus: 'role.admin_corpus',
+  responsable_conformite: 'role.responsable_conformite',
+  agent: 'role.agent',
+  chargeur: 'role.chargeur',
 };
 
 /**
@@ -246,6 +247,8 @@ const ROLE_LABELS: Record<string, string> = {
   ],
 })
 export class UserAvatarMenuComponent implements OnInit {
+  readonly lang = inject(LangService);
+
   profile: Profile | null = null;
   profileForm = { full_name: '', email: '', phone: '' };
   passwordForm = { current: '', next: '', confirm: '' };
@@ -301,7 +304,8 @@ export class UserAvatarMenuComponent implements OnInit {
 
   get roleLabel(): string {
     if (!this.profile) return '';
-    return ROLE_LABELS[this.profile.role] || this.profile.role;
+    const key = ROLE_LABEL_KEYS[this.profile.role];
+    return key ? this.lang.t(key) : this.profile.role;
   }
 
   openModal(): void {

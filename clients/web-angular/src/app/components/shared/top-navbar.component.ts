@@ -84,6 +84,7 @@ const CEMAC_COUNTRIES: CemacCountry[] = [
     `
       .topbar {
         position: relative;
+        z-index: 100;
         display: flex;
         align-items: center;
         gap: 1rem;

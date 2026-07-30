@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { AfterViewInit, Component, OnDestroy, OnInit, effect, inject } from '@angular/core';
 import { LayoutShellComponent } from '../../components/shared/layout-shell.component';
 import { ModalComponent } from '../../components/shared/modal.component';
 import { FormsModule } from '@angular/forms';
@@ -31,6 +31,55 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo, doit rester identique à
 // et AlertsService, qui comparent ces chaînes en dur) — elles ne sont
 // volontairement PAS traduites : seuls les libellés d'interface autour
 // (colonne "Statut", etc.) passent par lang.t(...).
+
+// jQuery DataTables a son PROPRE système i18n, indépendant de LangService —
+// sans ceci, "Show entries / Search / No data available / Showing X to Y /
+// Previous / Next" restent figés en anglais même en mode FR.
+const DATATABLES_LANG_FR = {
+  sProcessing: 'Traitement en cours...',
+  sSearch: 'Rechercher\u00a0:',
+  sLengthMenu: 'Afficher _MENU_ éléments',
+  sInfo: 'Affichage de l\u2019élément _START_ à _END_ sur _TOTAL_ éléments',
+  sInfoEmpty: 'Affichage de l\u2019élément 0 à 0 sur 0 élément',
+  sInfoFiltered: '(filtré de _MAX_ éléments au total)',
+  sInfoPostFix: '',
+  sLoadingRecords: 'Chargement en cours...',
+  sZeroRecords: 'Aucun élément à afficher',
+  sEmptyTable: 'Aucune donnée disponible dans le tableau',
+  oPaginate: {
+    sFirst: 'Premier',
+    sPrevious: 'Précédent',
+    sNext: 'Suivant',
+    sLast: 'Dernier',
+  },
+  oAria: {
+    sSortAscending: ' : activer pour trier la colonne par ordre croissant',
+    sSortDescending: ' : activer pour trier la colonne par ordre décroissant',
+  },
+};
+
+const DATATABLES_LANG_EN = {
+  sProcessing: 'Processing...',
+  sSearch: 'Search:',
+  sLengthMenu: 'Show _MENU_ entries',
+  sInfo: 'Showing _START_ to _END_ of _TOTAL_ entries',
+  sInfoEmpty: 'Showing 0 to 0 of 0 entries',
+  sInfoFiltered: '(filtered from _MAX_ total entries)',
+  sInfoPostFix: '',
+  sLoadingRecords: 'Loading...',
+  sZeroRecords: 'No matching records found',
+  sEmptyTable: 'No data available in table',
+  oPaginate: {
+    sFirst: 'First',
+    sPrevious: 'Previous',
+    sNext: 'Next',
+    sLast: 'Last',
+  },
+  oAria: {
+    sSortAscending: ': activate to sort column ascending',
+    sSortDescending: ': activate to sort column descending',
+  },
+};
 
 @Component({
   selector: 'app-documents-page',
@@ -222,8 +271,25 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
   sources: SourceSummary[] = [];
 
   private dt: any;
+  private isFirstLangEffectRun = true;
 
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService) {
+    // DataTables ne réagit pas tout seul à un changement de signal Angular :
+    // il faut détruire/recréer l'instance avec la bonne config `language`
+    // à chaque bascule FR/EN.
+    effect(() => {
+      this.lang.lang();
+      if (this.isFirstLangEffectRun) {
+        this.isFirstLangEffectRun = false;
+        return;
+      }
+      this.rebuildTable();
+    });
+  }
+
+  private dataTableLanguage() {
+    return this.lang.lang() === 'fr' ? DATATABLES_LANG_FR : DATATABLES_LANG_EN;
+  }
 
   async ngOnInit(): Promise<void> {
     await this.loadDocs();
@@ -252,6 +318,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
         paging: true,
         searching: true,
         info: true,
+        language: this.dataTableLanguage(),
       });
     } catch (e) {
       console.warn('DataTables init failed', e);
@@ -421,7 +488,14 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
   private rebuildTable() {
     try {
       if (this.dt) { this.dt.destroy(); }
-      setTimeout(() => { this.dt = ($('#docs-table') as any).DataTable(); }, 50);
+      setTimeout(() => {
+        this.dt = ($('#docs-table') as any).DataTable({
+          paging: true,
+          searching: true,
+          info: true,
+          language: this.dataTableLanguage(),
+        });
+      }, 50);
     } catch (e) {
       // ignore
     }
