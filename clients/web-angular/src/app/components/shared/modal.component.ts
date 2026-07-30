@@ -25,8 +25,8 @@ import { CommonModule } from '@angular/common';
   `,
   styles: [
     `
-      .modal-backdrop { position: fixed; inset: 0; background: rgba(2,8,23,0.6); z-index: 998; }
-      .modal { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 999; width: min(760px, 96%); background: var(--bg-elevated); border-radius: 12px; padding: 1rem; box-shadow: var(--shadow); }
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(2,8,23,0.6); z-index: 2000; }
+      .modal { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2001; width: min(760px, 96%); background: var(--bg-elevated); border-radius: 12px; padding: 1rem; box-shadow: var(--shadow); }
       .modal__header { display:flex; justify-content:space-between; align-items:center; }
       .modal__body { margin-top: 0.8rem; }
       .modal__footer { display:flex; justify-content:flex-end; gap:0.6rem; margin-top:1rem; }
