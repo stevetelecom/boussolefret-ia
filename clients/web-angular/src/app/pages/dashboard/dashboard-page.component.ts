@@ -68,7 +68,7 @@ interface DocSummary {
           <section class="card panel">
             <div class="panel__header">
               <h3>{{ lang.t('dashboard.recent_questions') }}</h3>
-              <a routerLink="/ask">{{ lang.t('dashboard.view_all') }}</a>
+              <a routerLink="/history">{{ lang.t('dashboard.view_all') }}</a>
             </div>
             <p class="empty-state" *ngIf="historyRestricted; else historyBlock">
               {{ lang.t('dashboard.history_restricted') }}

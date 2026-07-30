@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../core/auth.service';
 import { LangService } from '../../core/lang.service';
+import { ToastService } from '../../core/toast.service';
 
 declare const $: any;
 
@@ -252,6 +253,7 @@ const DATATABLES_LANG_EN = {
 })
 export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit {
   readonly lang = inject(LangService);
+  readonly toast = inject(ToastService);
 
   docs: Doc[] = [];
   loadError = '';
@@ -398,6 +400,7 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
       const res = await this.auth.authFetch(`/documents/${d.id}/download`);
       if (!res.ok) {
         this.loadError = this.lang.t('documents.err_download_link');
+        this.toast.error(this.lang.t('toast.download_failed'));
         return;
       }
       const data = await res.json();
@@ -418,9 +421,11 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
         this.docs = this.docs.filter(x => x.id !== this.docToDelete!.id);
         this.rebuildTable();
         this.showDeleteModal = false;
+        this.toast.success(this.lang.t('toast.doc_deleted'));
         this.docToDelete = null;
       } else {
         this.loadError = this.lang.t('documents.err_delete');
+        this.toast.error(this.lang.t('toast.doc_action_failed', { reason: this.lang.t('documents.err_delete') }));
       }
     } catch (e) {
       console.error(e);
@@ -456,12 +461,16 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
         : await this.auth.authFetch('/documents', { method: 'POST', body: payload });
 
       if (res.ok) {
+        const wasEdit = !!this.editingId;
         await this.loadDocs();
         this.showModal = false;
         this.selectedFile = null;
+        this.toast.success(this.lang.t(wasEdit ? 'toast.doc_updated' : 'toast.doc_added'));
       } else {
         const body = await res.json().catch(() => ({}));
-        this.modalError = body.error || this.lang.t('documents.err_generic');
+        const reason = body.error || this.lang.t('documents.err_generic');
+        this.modalError = reason;
+        this.toast.error(this.lang.t('toast.doc_action_failed', { reason }));
       }
     } catch (e) {
       console.error(e);

@@ -3,6 +3,7 @@ import { LoginPageComponent } from './pages/login/login-page.component';
 import { DashboardPageComponent } from './pages/dashboard/dashboard-page.component';
 import { DocumentsPageComponent } from './pages/documents/documents-page.component';
 import { AskPageComponent } from './pages/ask/ask-page.component';
+import { HistoryPageComponent } from './pages/history/history-page.component';
 import { authGuard } from './core/auth.guard';
 
 export const routes: Routes = [
@@ -33,6 +34,12 @@ export const routes: Routes = [
     component: AskPageComponent,
     canActivate: [authGuard],
     title: 'Ask · BoussoleFret IA',
+  },
+  {
+    path: 'history',
+    component: HistoryPageComponent,
+    canActivate: [authGuard],
+    title: 'Historique · BoussoleFret IA',
   },
   {
     path: '**',
