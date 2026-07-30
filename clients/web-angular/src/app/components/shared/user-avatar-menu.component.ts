@@ -177,7 +177,7 @@ const ROLE_LABELS: Record<string, string> = {
       .user-card__text strong { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .user-card__text span { font-size: 0.78rem; color: var(--muted); }
 
-      .modal-backdrop { position: fixed; inset: 0; background: rgba(2, 8, 23, 0.6); z-index: 998; }
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(2, 8, 23, 0.6); z-index: 998; animation: bf-modal-fade 0.18s ease; }
       .modal {
         position: fixed;
         left: 50%;
@@ -191,6 +191,12 @@ const ROLE_LABELS: Record<string, string> = {
         border-radius: 16px;
         padding: 1.2rem;
         box-shadow: var(--shadow);
+        animation: bf-modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes bf-modal-fade { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes bf-modal-pop {
+        from { opacity: 0; transform: translate(-50%, -50%) scale(0.94); }
+        to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
       }
       .modal__header { display: flex; justify-content: space-between; align-items: center; }
       .modal__header h3 { margin: 0; }

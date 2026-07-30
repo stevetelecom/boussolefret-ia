@@ -25,8 +25,13 @@ import { CommonModule } from '@angular/common';
   `,
   styles: [
     `
-      .modal-backdrop { position: fixed; inset: 0; background: rgba(2,8,23,0.6); z-index: 2000; }
-      .modal { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2001; width: min(760px, 96%); background: var(--bg-elevated); border-radius: 12px; padding: 1rem; box-shadow: var(--shadow); }
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(2,8,23,0.6); z-index: 2000; animation: bf-modal-fade 0.18s ease; }
+      .modal { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2001; width: min(760px, 96%); background: var(--bg-elevated); border-radius: 12px; padding: 1rem; box-shadow: var(--shadow); animation: bf-modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+      @keyframes bf-modal-fade { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes bf-modal-pop {
+        from { opacity: 0; transform: translate(-50%, -50%) scale(0.94); }
+        to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      }
       .modal__header { display:flex; justify-content:space-between; align-items:center; }
       .modal__body { margin-top: 0.8rem; }
       .modal__footer { display:flex; justify-content:flex-end; gap:0.6rem; margin-top:1rem; }

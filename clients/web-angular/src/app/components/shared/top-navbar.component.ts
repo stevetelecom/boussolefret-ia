@@ -82,7 +82,30 @@ const CEMAC_COUNTRIES: CemacCountry[] = [
   `,
   styles: [
     `
-      .topbar { display: flex; align-items: center; gap: 1rem; padding: 0.85rem 1.25rem; border-radius: 20px; background: var(--bg-elevated); border: 1px solid var(--border); box-shadow: var(--shadow); backdrop-filter: blur(18px); }
+      .topbar {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.85rem 1.25rem;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        /* pas de background/backdrop-filter directement ici : ça transformerait
+           .topbar en bloc de référence pour tout descendant position:fixed
+           (le modal profil se retrouverait centré sur la topbar, pas sur
+           l'écran). L'effet verre dépoli est isolé sur ::before à la place. */
+        isolation: isolate;
+      }
+      .topbar::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 20px;
+        background: var(--bg-elevated);
+        backdrop-filter: blur(18px);
+        z-index: -1;
+      }
       .topbar__zone { display: flex; gap: 0.35rem; align-items: center; opacity: 0.9; }
       .topbar__zone img { border-radius: 3px; box-shadow: 0 0 0 1px var(--border); display: block; }
       .topbar__spacer { flex: 1; }

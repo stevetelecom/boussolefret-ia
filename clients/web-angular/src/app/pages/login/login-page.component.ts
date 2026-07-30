@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
-import { I18nService, Lang } from '../../core/i18n.service';
+import { LangService, Lang } from '../../core/lang.service';
 import { LogoMarkComponent } from '../../components/shared/logo-mark.component';
 
 interface DemoAccount {
@@ -23,18 +23,18 @@ interface DemoAccount {
         <div class="auth-card card animate-in">
           <app-logo-mark [size]="56" />
           <div class="auth-card__intro">
-            <p class="eyebrow">{{ i18n.t('eyebrow') }}</p>
-            <h1>{{ i18n.t('loginTitle') }}</h1>
-            <p>{{ i18n.t('loginSubtitle') }}</p>
+            <p class="eyebrow">{{ lang.t('login.eyebrow') }}</p>
+            <h1>{{ lang.t('login.title') }}</h1>
+            <p>{{ lang.t('login.subtitle') }}</p>
           </div>
 
           <form class="auth-form" (ngSubmit)="handleLogin()">
             <label>
-              <span>{{ i18n.t('email') }}</span>
+              <span>{{ lang.t('login.email') }}</span>
               <input type="email" placeholder="agent@bgft.cm" [(ngModel)]="email" name="email" autocomplete="username" />
             </label>
             <label>
-              <span>{{ i18n.t('password') }}</span>
+              <span>{{ lang.t('login.password') }}</span>
               <div class="password-field">
                 <input
                   [type]="showPassword ? 'text' : 'password'"
@@ -55,13 +55,13 @@ interface DemoAccount {
             </label>
 
             <button type="submit" [disabled]="loading">
-              {{ loading ? i18n.t('loggingIn') : i18n.t('loginButton') }}
+              {{ loading ? lang.t('login.submitting') : lang.t('login.submit') }}
             </button>
             <p class="form-error" *ngIf="errorMessage">{{ errorMessage }}</p>
           </form>
 
           <div class="demo-accounts">
-            <p class="demo-accounts__title">{{ i18n.t('demoAccounts') }}</p>
+            <p class="demo-accounts__title">{{ lang.t('login.demo_accounts') }}</p>
             <div class="demo-accounts__grid">
               <button
                 type="button"
@@ -78,7 +78,7 @@ interface DemoAccount {
 
           <div class="security-note">
             <span class="material-icons-outlined">lock</span>
-            <p>{{ i18n.t('securityNote') }}</p>
+            <p>{{ lang.t('login.security_note') }}</p>
           </div>
         </div>
       </div>
@@ -91,13 +91,13 @@ interface DemoAccount {
         <div class="hero-overlay"></div>
 
         <div class="lang-toggle">
-          <button [class.active]="i18n.lang() === 'fr'" (click)="setLang('fr')">FR</button>
-          <button [class.active]="i18n.lang() === 'en'" (click)="setLang('en')">EN</button>
+          <button [class.active]="lang.lang() === 'fr'" (click)="setLang('fr')">FR</button>
+          <button [class.active]="lang.lang() === 'en'" (click)="setLang('en')">EN</button>
         </div>
 
         <div class="hero-copy">
-          <h2>{{ i18n.t('heroTitle') }}</h2>
-          <p>{{ i18n.t('heroSubtitle') }}</p>
+          <h2>{{ lang.t('login.hero_title') }}</h2>
+          <p>{{ lang.t('login.hero_subtitle') }}</p>
         </div>
       </div>
     </section>
@@ -241,7 +241,7 @@ export class LoginPageComponent {
   constructor(
     private readonly router: Router,
     private readonly auth: AuthService,
-    readonly i18n: I18nService,
+    readonly lang: LangService,
   ) {}
 
   togglePassword(): void {
@@ -249,7 +249,7 @@ export class LoginPageComponent {
   }
 
   setLang(lang: Lang): void {
-    this.i18n.setLang(lang);
+    this.lang.setLang(lang);
   }
 
   async quickLogin(acc: DemoAccount): Promise<void> {
@@ -266,7 +266,7 @@ export class LoginPageComponent {
       if (ok) {
         this.router.navigate(['/dashboard']);
       } else {
-        this.errorMessage = this.i18n.t('invalidCreds');
+        this.errorMessage = this.lang.t('login.invalid_credentials');
       }
     } finally {
       this.loading = false;
