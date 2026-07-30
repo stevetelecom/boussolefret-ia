@@ -30,6 +30,10 @@ export class ThemeService {
     this.mode.set(this.mode() === 'dark' ? 'light' : 'dark');
   }
 
+  setMode(value: ThemeMode): void {
+    this.mode.set(value);
+  }
+
   private readInitial(): ThemeMode {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);

@@ -79,3 +79,26 @@ button {
 .animate-in {
   animation: fadeUp 0.55s ease both;
 }
+
+/* Thème clair — la classe est posée sur <html> par ThemeService.
+   Toutes les couleurs de l'app passent par ces variables CSS, donc ce seul
+   bloc suffit à propager le thème clair partout sans toucher les composants. */
+html.theme-light {
+  color-scheme: light;
+  --bg: #eef3f8;
+  --bg-elevated: rgba(255, 255, 255, 0.92);
+  --surface: #ffffff;
+  --surface-strong: #e4ecf5;
+  --border: rgba(15, 35, 60, 0.12);
+  --text: #0b1420;
+  --muted: #5b6b7f;
+  --accent: #0f9c8f;
+  --accent-strong: #0c8478;
+  --danger: #d64545;
+  --shadow: 0 20px 45px rgba(15, 35, 60, 0.1);
+  background: linear-gradient(135deg, #eef3f8, #dce8f5 55%, #cfe0f2);
+}
+
+html.theme-light body {
+  background: radial-gradient(circle at top left, rgba(15, 156, 143, 0.12), transparent 26%), var(--bg);
+}

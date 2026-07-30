@@ -10,8 +10,7 @@ interface CemacCountry {
   name: string;
 }
 
-// Décoratif uniquement (confirmé) : simple rappel visuel d'appartenance à la
-// zone CEMAC, pas un sélecteur de tenant.
+// Décoratif uniquement (confirmé) : simple rappel visuel du bureau pilote.
 const CEMAC_COUNTRIES: CemacCountry[] = [
   { code: 'cm', name: 'Cameroun' },
 ];
@@ -22,33 +21,34 @@ const CEMAC_COUNTRIES: CemacCountry[] = [
   imports: [CommonModule, UserAvatarMenuComponent],
   template: `
     <header class="topbar">
-      <div class="topbar__zone" aria-label="Zone CEMAC">
-        <img
-          *ngFor="let c of countries"
-          [src]="'https://flagcdn.com/24x18/' + c.code + '.png'"
-          [alt]="c.name"
-          [title]="c.name"
-          width="22"
-          height="16"
-          loading="lazy"
-        />
-      </div>
-
       <div class="topbar__spacer"></div>
 
       <div class="topbar__actions">
-        <button class="icon-btn lang-btn" type="button" (click)="lang.toggle()" [attr.aria-label]="lang.t('navbar.lang_switch')">
-          <span class="lang-code">{{ lang.lang() === 'fr' ? 'FR' : 'EN' }}</span>
-        </button>
+        <div class="topbar__zone" aria-label="Bureau">
+          <img
+            *ngFor="let c of countries"
+            [src]="'https://flagcdn.com/24x18/' + c.code + '.png'"
+            [alt]="c.name"
+            [title]="c.name"
+            width="22"
+            height="16"
+            loading="lazy"
+          />
+        </div>
 
-        <button
-          class="icon-btn"
-          type="button"
-          (click)="theme.toggle()"
-          [attr.aria-label]="theme.mode() === 'dark' ? lang.t('navbar.theme_light') : lang.t('navbar.theme_dark')"
-        >
-          <span class="material-icons-outlined">{{ theme.mode() === 'dark' ? 'light_mode' : 'dark_mode' }}</span>
-        </button>
+        <div class="segmented" role="group" aria-label="Langue">
+          <button [class.active]="lang.lang() === 'fr'" (click)="lang.setLang('fr')">FR</button>
+          <button [class.active]="lang.lang() === 'en'" (click)="lang.setLang('en')">EN</button>
+        </div>
+
+        <div class="segmented" role="group" aria-label="Thème">
+          <button [class.active]="theme.mode() === 'light'" (click)="theme.setMode('light')" [attr.aria-label]="lang.t('navbar.theme_light')">
+            <span class="material-icons-outlined">light_mode</span>
+          </button>
+          <button [class.active]="theme.mode() === 'dark'" (click)="theme.setMode('dark')" [attr.aria-label]="lang.t('navbar.theme_dark')">
+            <span class="material-icons-outlined">dark_mode</span>
+          </button>
+        </div>
 
         <div class="notif-wrap">
           <button class="icon-btn" type="button" (click)="showNotif = !showNotif" [attr.aria-label]="lang.t('navbar.notifications')">
@@ -87,9 +87,12 @@ const CEMAC_COUNTRIES: CemacCountry[] = [
       .topbar__zone img { border-radius: 3px; box-shadow: 0 0 0 1px var(--border); display: block; }
       .topbar__spacer { flex: 1; }
       .topbar__actions { display: flex; align-items: center; gap: 0.6rem; }
+      .segmented { display: flex; gap: 0.2rem; background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem; }
+      .segmented button { border: 0; background: transparent; color: var(--muted); padding: 0.5rem 0.7rem; border-radius: 999px; cursor: pointer; font-weight: 700; font-size: 0.78rem; display: flex; align-items: center; }
+      .segmented button .material-icons-outlined { font-size: 1.1rem; }
+      .segmented button.active { background: var(--accent); color: var(--bg); }
       .icon-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); color: var(--text); transition: background 0.2s ease; }
       .icon-btn:hover { background: rgba(61, 215, 198, 0.12); }
-      .lang-code { font-weight: 800; font-size: 0.78rem; letter-spacing: 0.03em; }
       .badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 0.68rem; font-weight: 800; display: grid; place-items: center; }
       .notif-wrap { position: relative; }
       .notif-backdrop { position: fixed; inset: 0; z-index: 998; }
@@ -102,9 +105,6 @@ const CEMAC_COUNTRIES: CemacCountry[] = [
       .notif-panel li span { font-size: 0.75rem; color: var(--muted); }
       .warn { color: #ffb020; }
       .notif-empty { margin: 0; color: var(--muted); font-size: 0.85rem; text-align: center; padding: 1rem 0; }
-      @media (max-width: 640px) {
-        .topbar__zone img:nth-child(n + 4) { display: none; }
-      }
     `,
   ],
 })
