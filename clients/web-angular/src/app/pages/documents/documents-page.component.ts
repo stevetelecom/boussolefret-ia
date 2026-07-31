@@ -395,6 +395,9 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     if (!this.form.name || !this.form.name.trim()) {
       this.form.name = file.name;
     }
+    if (!this.form.name || !this.form.name.trim()) {
+      this.form.name = file.name;
+    }
   }
 
   async download(d: Doc): Promise<void> {
@@ -465,10 +468,16 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
 
       if (res.ok) {
         const wasEdit = !!this.editingId;
+        const body = await res.json().catch(() => ({}));
         await this.loadDocs();
         this.showModal = false;
         this.selectedFile = null;
-        this.toast.success(this.lang.t(wasEdit ? 'toast.doc_updated' : 'toast.doc_added'));
+        const chunksIndexed = typeof body.corpus_chunks_indexed === 'number' ? body.corpus_chunks_indexed : 0;
+        if (!wasEdit && chunksIndexed > 0) {
+          this.toast.success(this.lang.t('toast.doc_added_indexed', { count: chunksIndexed }));
+        } else {
+          this.toast.success(this.lang.t(wasEdit ? 'toast.doc_updated' : 'toast.doc_added'));
+        }
       } else {
         const body = await res.json().catch(() => ({}));
         const reason = body.error || this.lang.t('documents.err_generic');

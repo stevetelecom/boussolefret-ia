@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -24,6 +26,7 @@ import (
 	"github.com/flysoft/boussolefret-ia/go-api/internal/db"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/documents"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/history"
+	"github.com/flysoft/boussolefret-ia/go-api/internal/ingest"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/llm"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/storage"
 	"github.com/flysoft/boussolefret-ia/go-api/internal/users"
@@ -682,6 +685,7 @@ func uploadDocumentFile(ctx context.Context, minioClient *storage.Client, fileHe
 	return objectKey, contentType, nil
 }
 
+// newObjectKey génère une clé d'objet MinIO aléatoire et imprévisible
 // newObjectKey génère une clé d'objet MinIO aléatoire et imprévisible
 // (16 octets issus de crypto/rand), jamais dérivée du nom de fichier fourni
 // par le client — élimine tout risque de traversée de chemin ou de collision
