@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -206,7 +207,7 @@ func main() {
 			return
 		}
 
-		objectKey, contentType, err := uploadDocumentFile(c.Request.Context(), minioClient, fileHeader)
+		objectKey, contentType, fileBytes, err := uploadDocumentFile(c.Request.Context(), minioClient, fileHeader)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -228,6 +229,22 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
 			return
 		}
+
+		// Indexation automatique dans le corpus RAG si un texte est extractible
+		// (PDF pour l'instant). Ne bloque jamais la création du document : un
+		// échec d'extraction ou d'indexation est loggué, pas remonté au client
+		// — le document de transport reste valide même sans corpus indexé.
+		if text, exErr := ingest.ExtractText(fileHeader.Filename, fileBytes); exErr != nil {
+			log.Printf("extraction de texte impossible pour %s: %v", fileHeader.Filename, exErr)
+		} else if strings.TrimSpace(text) != "" {
+			inserted, ingErr := ingestTextIntoCorpus(c.Request.Context(), corpusRepo, embeddingsClient, tenantDefault, fileHeader.Filename, text)
+			if ingErr != nil {
+				log.Printf("indexation corpus partielle pour %s: %v (%d fragment(s) indexé(s))", fileHeader.Filename, ingErr, inserted)
+			} else {
+				log.Printf("document %s indexé automatiquement dans le corpus: %d fragment(s)", fileHeader.Filename, inserted)
+			}
+		}
+
 		c.JSON(http.StatusCreated, created)
 	})
 
@@ -270,7 +287,7 @@ func main() {
 		replacingFile := false
 		oldStorageKey := existing.StorageKey
 		if fileHeader, ferr := c.FormFile("file"); ferr == nil {
-			objectKey, contentType, err := uploadDocumentFile(c.Request.Context(), minioClient, fileHeader)
+			objectKey, contentType, fileBytes, err := uploadDocumentFile(c.Request.Context(), minioClient, fileHeader)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
@@ -280,6 +297,17 @@ func main() {
 			d.ContentType = contentType
 			d.StorageKey = objectKey
 			replacingFile = true
+
+			if text, exErr := ingest.ExtractText(fileHeader.Filename, fileBytes); exErr != nil {
+				log.Printf("extraction de texte impossible pour %s: %v", fileHeader.Filename, exErr)
+			} else if strings.TrimSpace(text) != "" {
+				inserted, ingErr := ingestTextIntoCorpus(c.Request.Context(), corpusRepo, embeddingsClient, tenantDefault, fileHeader.Filename, text)
+				if ingErr != nil {
+					log.Printf("indexation corpus partielle pour %s: %v (%d fragment(s) indexé(s))", fileHeader.Filename, ingErr, inserted)
+				} else {
+					log.Printf("document %s indexé automatiquement dans le corpus: %d fragment(s)", fileHeader.Filename, inserted)
+				}
+			}
 		}
 
 		updated, err := docRepo.Update(c.Request.Context(), id, d)
@@ -651,38 +679,67 @@ func main() {
 // fichier reçu en multipart vers MinIO sous une clé générée côté serveur.
 // Centralisé ici car utilisé identiquement par la création et le
 // remplacement de fichier d'un document.
-func uploadDocumentFile(ctx context.Context, minioClient *storage.Client, fileHeader *multipart.FileHeader) (objectKey string, contentType string, err error) {
+func uploadDocumentFile(ctx context.Context, minioClient *storage.Client, fileHeader *multipart.FileHeader) (objectKey string, contentType string, data []byte, err error) {
 	if fileHeader.Size > maxDocumentUploadBytes {
-		return "", "", errors.New("fichier trop volumineux (20 Mo maximum)")
+		return "", "", nil, errors.New("fichier trop volumineux (20 Mo maximum)")
 	}
 
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	if !allowedDocumentExtensions[ext] {
-		return "", "", errors.New("type de fichier non autorisé (formats acceptés : pdf, doc, docx, xls, xlsx, jpg, png)")
+		return "", "", nil, errors.New("type de fichier non autorisé (formats acceptés : pdf, doc, docx, xls, xlsx, jpg, png)")
 	}
 
 	objectKey, err = newObjectKey(ext)
 	if err != nil {
-		return "", "", errors.New("erreur interne lors de la préparation du fichier")
+		return "", "", nil, errors.New("erreur interne lors de la préparation du fichier")
 	}
 
 	src, err := fileHeader.Open()
 	if err != nil {
-		return "", "", errors.New("lecture du fichier envoyé impossible")
+		return "", "", nil, errors.New("lecture du fichier envoyé impossible")
 	}
 	defer src.Close()
+
+	// On lit le fichier une seule fois en mémoire (déjà plafonné à 20 Mo par
+	// le contrôle ci-dessus) : les mêmes octets servent à la fois pour
+	// l'upload MinIO et, si c'est un PDF, pour l'extraction de texte vers le
+	// corpus réglementaire — jamais une deuxième lecture depuis MinIO.
+	data, err = io.ReadAll(src)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("lecture du contenu du fichier: %w", err)
+	}
 
 	contentType = fileHeader.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
-	if err := minioClient.Upload(ctx, objectKey, src, fileHeader.Size, contentType); err != nil {
+	if err := minioClient.Upload(ctx, objectKey, bytes.NewReader(data), fileHeader.Size, contentType); err != nil {
 		log.Printf("erreur upload MinIO (%s): %v", fileHeader.Filename, err)
-		return "", "", errors.New("échec de l'envoi du fichier vers le stockage")
+		return "", "", nil, errors.New("échec de l'envoi du fichier vers le stockage")
 	}
 
-	return objectKey, contentType, nil
+	return objectKey, contentType, data, nil
+}
+
+// ingestTextIntoCorpus factorise le découpage + vectorisation + insertion déjà
+// utilisés par POST /corpus, pour que l'upload d'un document de transport
+// puisse alimenter automatiquement le même corpus RAG (au lieu de rester une
+// action manuelle séparée via /corpus).
+func ingestTextIntoCorpus(ctx context.Context, corpusRepo *corpus.Repository, embeddingsClient llm.EmbeddingsClient, tenantID, source, content string) (int, error) {
+	chunks := corpus.SplitIntoChunks(content, chunkMaxRunes, chunkOverlap)
+	inserted := 0
+	for _, chunk := range chunks {
+		embedding, err := embeddingsClient.Embed(ctx, chunk)
+		if err != nil {
+			return inserted, err
+		}
+		if err := corpusRepo.Insert(ctx, tenantID, source, chunk, embedding); err != nil {
+			return inserted, err
+		}
+		inserted++
+	}
+	return inserted, nil
 }
 
 // newObjectKey génère une clé d'objet MinIO aléatoire et imprévisible
