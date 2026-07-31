@@ -105,16 +105,18 @@ interface DemoAccount {
   styles: [
     `
       .auth-screen {
-        min-height: 100vh;
+        height: 100vh;
         display: grid;
         grid-template-columns: minmax(360px, 480px) 1fr;
       }
       .auth-panel {
         display: grid;
         place-items: center;
+        overflow-y: auto;
+        max-height: 100vh;
         padding: 1.5rem;
       }
-      .auth-card { width: min(460px, 100%); padding: 2rem; }
+      .auth-card { width: min(460px, 100%); padding: 1.5rem; }
       app-logo-mark { display: block; margin-bottom: 1rem; }
       .eyebrow {
         text-transform: uppercase;
@@ -125,7 +127,7 @@ interface DemoAccount {
       }
       h1 { font-size: clamp(1.4rem, 2.4vw, 1.9rem); margin: 0 0 0.75rem; }
       .auth-card__intro p { color: var(--muted); line-height: 1.6; }
-      .auth-form { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 1.3rem; }
+      .auth-form { display: flex; flex-direction: column; gap: 0.65rem; margin-top: 1rem; }
       .auth-form label { display: flex; flex-direction: column; gap: 0.45rem; color: var(--muted); }
       .auth-form input {
         width: 100%;
@@ -154,7 +156,7 @@ interface DemoAccount {
       .auth-form button[type="submit"]:disabled { opacity: 0.6; cursor: not-allowed; }
       .form-error { color: #ff8f8f; margin: 0; font-size: 0.9rem; }
 
-      .demo-accounts { margin-top: 1.4rem; padding-top: 1.2rem; border-top: 1px solid var(--border); }
+      .demo-accounts { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
       .demo-accounts__title {
         text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.72rem;
         color: var(--muted); margin: 0 0 0.7rem;
