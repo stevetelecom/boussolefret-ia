@@ -71,8 +71,7 @@ func main() {
 	{
 		initCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := minioClient.EnsureBucket(initCtx); err != nil {
-			cancel()
-			log.Fatalf("bucket MinIO indisponible: %v", err)
+			log.Printf("avertissement: bucket MinIO indisponible au démarrage (%v) -- upload de documents indisponible tant que MinIO n'est pas joignable, le reste de l'API démarre normalement", err)
 		}
 		cancel()
 	}
