@@ -45,8 +45,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # Console
+      - "9002:9000"   # API (9000 pris par FretCorridor sur cette machine)
+      - "9003:9001"   # Console
     volumes:
       - minio_data:/data
 
