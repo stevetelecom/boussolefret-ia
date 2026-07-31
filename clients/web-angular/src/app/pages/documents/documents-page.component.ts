@@ -196,7 +196,8 @@ const DATATABLES_LANG_EN = {
 
         <app-modal [title]="lang.t('documents.sources_title')" [(show)]="showSourcesModal" (save)="showSourcesModal=false" (close)="showSourcesModal=false">
           <div *ngIf="sourcesLoading">{{ lang.t('common.loading') }}</div>
-          <div *ngIf="!sourcesLoading && sources.length === 0" class="empty-state">
+          <p class="form-error" *ngIf="!sourcesLoading && sourcesError">{{ sourcesError }}</p>
+          <div *ngIf="!sourcesLoading && !sourcesError && sources.length === 0" class="empty-state">
             {{ lang.t('documents.empty_corpus') }}
           </div>
           <ul class="sources-list" *ngIf="!sourcesLoading && sources.length > 0">
@@ -314,18 +315,14 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     }
   }
 
-  ngAfterViewInit(): void {
-    try {
-      this.dt = ($('#docs-table') as any).DataTable({
-        paging: true,
-        searching: true,
-        info: true,
-        language: this.dataTableLanguage(),
-      });
-    } catch (e) {
-      console.warn('DataTables init failed', e);
-    }
-  }
+  // Volontairement vide : DataTables ne doit être initialisé qu'une fois les
+  // documents chargés (voir rebuildTable(), appelé depuis loadDocs()). Un
+  // appel .DataTable() ici, sur le <table> encore vide au premier rendu,
+  // fait que jQuery DataTables capture un instantané "0 ligne" — et son
+  // destroy() ultérieur (dans rebuildTable) RESTAURE cet instantané vide,
+  // effaçant les lignes qu'Angular avait pourtant bien rendues entre-temps.
+  // C'est ce qui causait "7 fichiers" dans l'en-tête mais un tableau vide.
+  ngAfterViewInit(): void {}
 
   ngOnDestroy(): void {
     try { if (this.dt) { this.dt.destroy(true); } } catch {}
@@ -473,7 +470,16 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
         this.showModal = false;
         this.selectedFile = null;
         const chunksIndexed = typeof body.corpus_chunks_indexed === 'number' ? body.corpus_chunks_indexed : 0;
-        if (!wasEdit && chunksIndexed > 0) {
+        const indexError = typeof body.corpus_index_error === 'string' ? body.corpus_index_error : '';
+
+        // Le document lui-même (métadonnées + fichier) est toujours créé/mis à
+        // jour avec succès à ce stade (res.ok) — mais l'indexation RAG est une
+        // étape séparée qui peut échouer (PDF illisible, API embeddings en
+        // panne...). On distingue clairement les deux, plutôt que d'afficher
+        // un succès générique qui masquerait un corpus resté vide.
+        if (indexError) {
+          this.toast.error(this.lang.t('toast.doc_saved_index_failed', { reason: indexError }));
+        } else if (chunksIndexed > 0) {
           this.toast.success(this.lang.t('toast.doc_added_indexed', { count: chunksIndexed }));
         } else {
           this.toast.success(this.lang.t(wasEdit ? 'toast.doc_updated' : 'toast.doc_added'));
@@ -492,15 +498,29 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
 
   onModalClose() { this.showModal = false; this.selectedFile = null; }
 
+  sourcesError = '';
+
   async openSources(): Promise<void> {
     this.showSourcesModal = true;
     this.sourcesLoading = true;
+    this.sourcesError = '';
+    this.sources = [];
     try {
       const res = await this.auth.authFetch('/corpus');
-      this.sources = res.ok ? await res.json() : [];
+      if (res.ok) {
+        this.sources = await res.json();
+      } else if (res.status === 403) {
+        // Rôle sans droit sur /corpus (réservé admin_corpus) — message
+        // explicite plutôt qu'un silencieux "corpus vide" trompeur.
+        this.sourcesError = this.lang.t('documents.err_sources_forbidden');
+      } else {
+        this.sourcesError = this.lang.t('documents.err_sources_load');
+        this.toast.error(this.lang.t('documents.err_sources_load'));
+      }
     } catch (e) {
-      console.error(e);
-      this.sources = [];
+      console.error('openSources error', e);
+      this.sourcesError = this.lang.t('documents.err_sources_network');
+      this.toast.error(this.lang.t('documents.err_sources_network'));
     } finally {
       this.sourcesLoading = false;
     }

@@ -231,21 +231,42 @@ func main() {
 		}
 
 		// Indexation automatique dans le corpus RAG si un texte est extractible
-		// (PDF pour l'instant). Ne bloque jamais la création du document : un
-		// échec d'extraction ou d'indexation est loggué, pas remonté au client
-		// — le document de transport reste valide même sans corpus indexé.
+		// (PDF pour l'instant). Un échec d'extraction ou d'indexation ne bloque
+		// JAMAIS la création du document (le document de transport reste valide
+		// même sans corpus indexé) — MAIS il doit être visible côté client, pas
+		// seulement loggué côté serveur : sans ça, l'utilisateur croit que tout
+		// s'est bien passé alors que le corpus RAG reste vide en silence.
+		chunksIndexed := 0
+		indexError := ""
 		if text, exErr := ingest.ExtractText(fileHeader.Filename, fileBytes); exErr != nil {
 			log.Printf("extraction de texte impossible pour %s: %v", fileHeader.Filename, exErr)
-		} else if strings.TrimSpace(text) != "" {
+			indexError = "extraction du texte impossible : " + exErr.Error()
+		} else if strings.TrimSpace(text) == "" {
+			// Pas une erreur en soi (ex: PDF scanné sans couche texte) mais
+			// l'utilisateur doit savoir que ce document n'alimentera pas Ask.
+			indexError = "aucun texte exploitable trouvé dans ce fichier (PDF scanné sans OCR ?)"
+		} else {
 			inserted, ingErr := ingestTextIntoCorpus(c.Request.Context(), corpusRepo, embeddingsClient, tenantDefault, fileHeader.Filename, text)
+			chunksIndexed = inserted
 			if ingErr != nil {
 				log.Printf("indexation corpus partielle pour %s: %v (%d fragment(s) indexé(s))", fileHeader.Filename, ingErr, inserted)
+				indexError = "échec d'indexation : " + ingErr.Error()
 			} else {
 				log.Printf("document %s indexé automatiquement dans le corpus: %d fragment(s)", fileHeader.Filename, inserted)
 			}
 		}
 
-		c.JSON(http.StatusCreated, created)
+		c.JSON(http.StatusCreated, gin.H{
+			"id":                    created.ID,
+			"name":                  created.Name,
+			"status":                created.Status,
+			"file_name":             created.FileName,
+			"file_size":             created.FileSize,
+			"content_type":          created.ContentType,
+			"has_file":              created.HasFile,
+			"corpus_chunks_indexed": chunksIndexed,
+			"corpus_index_error":    indexError,
+		})
 	})
 
 	// Mise à jour d'un document. Le fichier ("file") est optionnel : si
@@ -286,6 +307,8 @@ func main() {
 
 		replacingFile := false
 		oldStorageKey := existing.StorageKey
+		chunksIndexed := 0
+		indexError := ""
 		if fileHeader, ferr := c.FormFile("file"); ferr == nil {
 			objectKey, contentType, fileBytes, err := uploadDocumentFile(c.Request.Context(), minioClient, fileHeader)
 			if err != nil {
@@ -300,10 +323,15 @@ func main() {
 
 			if text, exErr := ingest.ExtractText(fileHeader.Filename, fileBytes); exErr != nil {
 				log.Printf("extraction de texte impossible pour %s: %v", fileHeader.Filename, exErr)
-			} else if strings.TrimSpace(text) != "" {
+				indexError = "extraction du texte impossible : " + exErr.Error()
+			} else if strings.TrimSpace(text) == "" {
+				indexError = "aucun texte exploitable trouvé dans ce fichier (PDF scanné sans OCR ?)"
+			} else {
 				inserted, ingErr := ingestTextIntoCorpus(c.Request.Context(), corpusRepo, embeddingsClient, tenantDefault, fileHeader.Filename, text)
+				chunksIndexed = inserted
 				if ingErr != nil {
 					log.Printf("indexation corpus partielle pour %s: %v (%d fragment(s) indexé(s))", fileHeader.Filename, ingErr, inserted)
+					indexError = "échec d'indexation : " + ingErr.Error()
 				} else {
 					log.Printf("document %s indexé automatiquement dans le corpus: %d fragment(s)", fileHeader.Filename, inserted)
 				}
@@ -332,7 +360,17 @@ func main() {
 				log.Printf("erreur suppression ancien fichier MinIO (document %d): %v", id, err)
 			}
 		}
-		c.JSON(http.StatusOK, updated)
+		c.JSON(http.StatusOK, gin.H{
+			"id":                    updated.ID,
+			"name":                  updated.Name,
+			"status":                updated.Status,
+			"file_name":             updated.FileName,
+			"file_size":             updated.FileSize,
+			"content_type":          updated.ContentType,
+			"has_file":              updated.HasFile,
+			"corpus_chunks_indexed": chunksIndexed,
+			"corpus_index_error":    indexError,
+		})
 	})
 
 	conformite.DELETE("/documents/:id", func(c *gin.Context) {

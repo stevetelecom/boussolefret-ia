@@ -2,12 +2,13 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Table de base pour les segments de documents indexés (embeddings)
+-- FIX: dimension corrigée à 768 pour nomic-embed-text (était 1536 pour OpenAI)
 CREATE TABLE IF NOT EXISTS document_chunks (
     id          BIGSERIAL PRIMARY KEY,
     tenant_id   TEXT NOT NULL,
     source      TEXT NOT NULL,          -- ex: "BGFT - reglement fret interieur"
     content     TEXT NOT NULL,
-    embedding   VECTOR(1536),           -- ajuster la dimension selon le modèle d'embeddings choisi
+    embedding   VECTOR(768),            -- Dimension pour nomic-embed-text d'Ollama
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -37,11 +38,8 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_type TEXT NOT NULL DEFAUL
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_key  TEXT NOT NULL DEFAULT '';
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS uploaded_by  TEXT NOT NULL DEFAULT '';
 
--- Données de démonstration (reprend les 3 documents précédemment codés en dur dans go-api)
-INSERT INTO documents (name, status) VALUES
-    ('LVO_2026.pdf', 'Validé'),
-    ('LVI_2026.pdf', 'À vérifier'),
-    ('Mission_042.pdf', 'À risque');
+--  FIX: Données de démonstration SUPPRIMÉES (créaient des doublons)
+-- Les documents doivent être uploadés manuellement via l'interface web
 
 -- Activation de l'index de similarité cosinus, maintenant qu'on va réellement
 -- alimenter document_chunks (remplace le commentaire précédent laissé en placeholder).
@@ -82,7 +80,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users (tenant_id);
 
--- Comptes de démo, un par rôle, tous avec le mot de passe BoussoleFret2026!
+-- Comptes de démo, un par rôle, tous avec le mot de passe Demo2026!
 -- (hash bcrypt réel, jamais de mot de passe en clair en base).
 INSERT INTO users (tenant_id, email, password_hash, role, full_name) VALUES
     ('BGFT', 'admin@bgft.cm', '$2b$10$t.nV8kqcp2VkvTgt.yIHoeA8bI3vYhjkhAR/MHwYyLWh0dBhyzZS2', 'admin_corpus', 'Administrateur Corpus'),
