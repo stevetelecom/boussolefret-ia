@@ -392,6 +392,9 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
       return;
     }
     this.selectedFile = file;
+    if (!this.form.name || !this.form.name.trim()) {
+      this.form.name = file.name;
+    }
   }
 
   async download(d: Doc): Promise<void> {
