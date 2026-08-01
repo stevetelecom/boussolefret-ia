@@ -95,6 +95,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     'ask.send': 'Envoyer',
     'ask.searching': 'Recherche en cours...',
     'ask.err_service': 'Erreur service IA (voir logs go-api).',
+    'ask.err_service_detail': 'Erreur service IA : {{reason}}',
     'ask.sources_prefix': ' · Sources : ',
     'ask.err_network': "Erreur réseau vers l'API.",
 
@@ -226,6 +227,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     'ask.send': 'Send',
     'ask.searching': 'Searching...',
     'ask.err_service': 'AI service error (see go-api logs).',
+    'ask.err_service_detail': 'AI service error: {{reason}}',
     'ask.sources_prefix': ' · Sources: ',
     'ask.err_network': 'Network error reaching the API.',
 

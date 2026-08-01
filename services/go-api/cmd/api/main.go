@@ -508,7 +508,7 @@ func main() {
 		queryEmbedding, err := embeddingsClient.Embed(ctx, question)
 		if err != nil {
 			log.Printf("erreur embedding question: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Service IA (embeddings) indisponible : " + err.Error()})
 			return
 		}
 
@@ -549,7 +549,7 @@ func main() {
 		answer, err := chatClient.Answer(ctx, question, contextBuilder.String())
 		if err != nil {
 			log.Printf("erreur génération réponse LLM: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur serveur"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Service IA (génération de réponse) indisponible : " + err.Error()})
 			return
 		}
 

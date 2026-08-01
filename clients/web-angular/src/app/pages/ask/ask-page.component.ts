@@ -71,7 +71,17 @@ export class AskPageComponent {
     try {
       const res = await this.auth.authFetch('/ask', { method: 'POST', body: JSON.stringify({ question: text }) });
       if (!res.ok) {
-        this.msgs[placeholderIndex] = { from: 'bot', text: this.lang.t('ask.err_service') };
+        let reason = '';
+        try {
+          const body = await res.json();
+          reason = typeof body?.error === 'string' ? body.error : '';
+        } catch {
+          // corps de réponse non-JSON : on retombe sur le message générique
+        }
+        this.msgs[placeholderIndex] = {
+          from: 'bot',
+          text: reason ? this.lang.t('ask.err_service_detail', { reason }) : this.lang.t('ask.err_service'),
+        };
         return;
       }
       const data = await res.json();
