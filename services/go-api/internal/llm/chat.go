@@ -25,12 +25,12 @@ type httpChatClient struct {
 	client *http.Client
 }
 
-func NewChatClient(apiURL, apiKey, model string) ChatClient {
+func NewChatClient(apiURL, apiKey, model string, timeout time.Duration) ChatClient {
 	return &httpChatClient{
 		apiURL: apiURL,
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{Timeout: timeout},
 	}
 }
 

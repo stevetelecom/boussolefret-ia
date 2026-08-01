@@ -24,12 +24,12 @@ type httpEmbeddingsClient struct {
 	client *http.Client
 }
 
-func NewEmbeddingsClient(apiURL, apiKey, model string) EmbeddingsClient {
+func NewEmbeddingsClient(apiURL, apiKey, model string, timeout time.Duration) EmbeddingsClient {
 	return &httpEmbeddingsClient{
 		apiURL: apiURL,
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: timeout},
 	}
 }
 

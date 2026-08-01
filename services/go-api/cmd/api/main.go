@@ -84,8 +84,8 @@ func main() {
 	corpusRepo := corpus.NewRepository(pool)
 	historyRepo := history.NewRepository(pool)
 	usersRepo := users.NewRepository(pool)
-	embeddingsClient := llm.NewEmbeddingsClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.EmbeddingsModel)
-	chatClient := llm.NewChatClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.ChatModel)
+	embeddingsClient := llm.NewEmbeddingsClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.EmbeddingsModel, cfg.LLMTimeout)
+	chatClient := llm.NewChatClient(cfg.LLMAPIURL, cfg.LLMAPIKey, cfg.ChatModel, cfg.LLMTimeout)
 
 	router := gin.Default()
 	router.MaxMultipartMemory = 8 << 20 // 8 Mo gardés en mémoire ; au-delà, Gin bascule sur fichier temporaire disque
