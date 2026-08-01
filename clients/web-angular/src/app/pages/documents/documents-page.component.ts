@@ -115,9 +115,30 @@ const DATATABLES_LANG_EN = {
             <span>{{ docs.length }} {{ lang.t('documents.files_word') }}</span>
           </div>
 
+          <div class="bulk-bar" *ngIf="selectedIds.size > 0">
+            <span class="bulk-bar__count">{{ lang.t('documents.selected_count', { count: selectedIds.size }) }}</span>
+            <div class="bulk-bar__actions">
+              <button class="btn" (click)="bulkDownload()">
+                <span class="material-icons-outlined">download</span>
+                {{ lang.t('documents.bulk_download') }}
+              </button>
+              <button class="btn danger" (click)="openBulkDelete()">
+                <span class="material-icons-outlined">delete</span>
+                {{ lang.t('documents.bulk_delete') }}
+              </button>
+              <button class="btn ghost" (click)="clearSelection()">
+                {{ lang.t('documents.bulk_clear') }}
+              </button>
+            </div>
+          </div>
+
           <table id="docs-table" class="display" style="width:100%">
             <thead>
               <tr>
+                <th>
+                  <input type="checkbox" [checked]="allSelected" (change)="toggleSelectAll()"
+                         [attr.aria-label]="lang.t('documents.select_all_aria')" />
+                </th>
                 <th>{{ lang.t('documents.col_id') }}</th>
                 <th>{{ lang.t('documents.col_name') }}</th>
                 <th>{{ lang.t('documents.col_file') }}</th>
@@ -127,6 +148,10 @@ const DATATABLES_LANG_EN = {
             </thead>
             <tbody>
               <tr *ngFor="let d of docs">
+                <td>
+                  <input type="checkbox" [checked]="selectedIds.has(d.id)" (change)="toggleSelect(d.id)"
+                         [attr.aria-label]="lang.t('documents.select_row_aria')" />
+                </td>
                 <td>{{d.id}}</td>
                 <td>{{d.name}}</td>
                 <td>
@@ -194,6 +219,10 @@ const DATATABLES_LANG_EN = {
           </p>
         </app-modal>
 
+        <app-modal [title]="lang.t('documents.bulk_delete_title')" [(show)]="showBulkDeleteModal" (save)="confirmBulkDelete()" (close)="showBulkDeleteModal=false">
+          <p>{{ lang.t('documents.bulk_delete_confirm', { count: selectedIds.size }) }}</p>
+        </app-modal>
+
         <app-modal [title]="lang.t('documents.sources_title')" [(show)]="showSourcesModal" (save)="showSourcesModal=false" (close)="showSourcesModal=false">
           <div *ngIf="sourcesLoading">{{ lang.t('common.loading') }}</div>
           <p class="form-error" *ngIf="!sourcesLoading && sourcesError">{{ sourcesError }}</p>
@@ -220,6 +249,24 @@ const DATATABLES_LANG_EN = {
       .header-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
       .panel { padding: 1rem; }
       .panel__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; }
+      .bulk-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        padding: 0.7rem 0.9rem;
+        margin-bottom: 0.8rem;
+        border-radius: 12px;
+        background: rgba(61, 215, 198, 0.08);
+        border: 1px solid rgba(61, 215, 198, 0.25);
+      }
+      .bulk-bar__count { font-weight: 600; }
+      .bulk-bar__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+      .btn.danger { color: #ff8f8f; border-color: rgba(255,143,143,0.35); }
+      .btn.danger:hover { background: rgba(255,143,143,0.1); }
+      .btn.ghost { border-color: transparent; }
+      table.dataTable thead th:first-child, table.dataTable tbody td:first-child { text-align: center; width: 2.4rem; }
       table.dataTable { color: var(--text); }
       .modal-form { display:flex; flex-direction:column; gap:0.6rem; }
       .modal-form label { display:flex; flex-direction:column; gap: 0.3rem; }
@@ -269,6 +316,9 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
   showDeleteModal = false;
   docToDelete: Doc | null = null;
 
+  showBulkDeleteModal = false;
+  selectedIds = new Set<number>();
+
   showSourcesModal = false;
   sourcesLoading = false;
   sources: SourceSummary[] = [];
@@ -308,6 +358,13 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
       this.loadError = '';
       const data = await res.json();
       this.docs = data || [];
+      // Purge les sélections devenues obsolètes (document supprimé/absent
+      // après un rechargement) pour ne jamais laisser la barre d'actions
+      // groupées afficher un compte fantôme.
+      const validIds = new Set(this.docs.map((d) => d.id));
+      this.selectedIds.forEach((id) => {
+        if (!validIds.has(id)) this.selectedIds.delete(id);
+      });
       setTimeout(() => { this.rebuildTable(); }, 50);
     } catch (e) {
       console.error('loadDocs error', e);
@@ -365,6 +422,100 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
   openDelete(d: Doc) {
     this.docToDelete = d;
     this.showDeleteModal = true;
+  }
+
+  toggleSelect(id: number): void {
+    if (this.selectedIds.has(id)) {
+      this.selectedIds.delete(id);
+    } else {
+      this.selectedIds.add(id);
+    }
+  }
+
+  get allSelected(): boolean {
+    return this.docs.length > 0 && this.docs.every((d) => this.selectedIds.has(d.id));
+  }
+
+  toggleSelectAll(): void {
+    if (this.allSelected) {
+      this.selectedIds.clear();
+    } else {
+      this.docs.forEach((d) => this.selectedIds.add(d.id));
+    }
+  }
+
+  clearSelection(): void {
+    this.selectedIds.clear();
+  }
+
+  openBulkDelete(): void {
+    if (this.selectedIds.size === 0) return;
+    this.showBulkDeleteModal = true;
+  }
+
+  async confirmBulkDelete(): Promise<void> {
+    const ids = Array.from(this.selectedIds);
+    let failed = 0;
+    // Séquentiel plutôt que Promise.all : évite d'envoyer N suppressions
+    // simultanées (fichiers MinIO + lignes DB) au backend d'un coup.
+    for (const id of ids) {
+      try {
+        const res = await this.auth.authFetch(`/documents/${id}`, { method: 'DELETE' });
+        if (!res.ok) failed++;
+      } catch (e) {
+        console.error('bulk delete error', id, e);
+        failed++;
+      }
+    }
+    this.showBulkDeleteModal = false;
+    this.selectedIds.clear();
+    await this.loadDocs();
+    if (failed > 0) {
+      this.toast.error(this.lang.t('documents.bulk_delete_partial_fail', { failed, total: ids.length }));
+    } else {
+      this.toast.success(this.lang.t('toast.doc_deleted'));
+    }
+  }
+
+  async bulkDownload(): Promise<void> {
+    const ids = Array.from(this.selectedIds).filter((id) => {
+      const d = this.docs.find((x) => x.id === id);
+      return !!d && d.has_file;
+    });
+    if (ids.length === 0) return;
+
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        const res = await this.auth.authFetch(`/documents/${id}/download`);
+        if (!res.ok) {
+          failed++;
+          continue;
+        }
+        const data = await res.json();
+        if (data && data.url) {
+          const a = document.createElement('a');
+          a.href = data.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          // Petite pause entre chaque déclenchement : les navigateurs
+          // bloquent les téléchargements multiples lancés en rafale par
+          // script sans interaction utilisateur entre chacun.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        } else {
+          failed++;
+        }
+      } catch (e) {
+        console.error('bulk download error', id, e);
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      this.toast.error(this.lang.t('documents.bulk_download_partial_fail', { failed, total: ids.length }));
+    }
   }
 
   onFileSelected(event: Event): void {
@@ -535,6 +686,11 @@ export class DocumentsPageComponent implements AfterViewInit, OnDestroy, OnInit 
           searching: true,
           info: true,
           language: this.dataTableLanguage(),
+          // Colonne 0 = case à cocher, colonne 5 = actions : ni triables ni
+          // recherchables, ce sont des contrôles, pas des données.
+          columnDefs: [
+            { orderable: false, searchable: false, targets: [0, 5] },
+          ],
         });
       }, 50);
     } catch (e) {
